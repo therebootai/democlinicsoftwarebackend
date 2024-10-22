@@ -4,6 +4,7 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const MongoDbConnect = require("./connection");
 const fileUpload = require("express-fileupload");
+const userRoutes = require("./routes/userRoute");
 require("dotenv").config();
 const port = process.env.PORT;
 MongoDbConnect();
@@ -20,6 +21,7 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
+app.use("/api/user", userRoutes);
 
 app.listen(port, () => {
   console.log(`Port starts on  ${port}`);
