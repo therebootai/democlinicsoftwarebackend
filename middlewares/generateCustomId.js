@@ -21,3 +21,5 @@ const generateCustomId = async (Model, idField, prefix) => {
   // Return the new custom ID with the prefix and padded number
   return `${prefix}${String(newId).padStart(4, "0")}`;
 };
+
+module.exports = generateCustomId;

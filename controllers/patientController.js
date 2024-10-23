@@ -1,29 +1,34 @@
+const generateCustomId = require("../middlewares/generateCustomId");
 const Patients = require("../models/patientModel");
 const NodeCache = require("node-cache");
 const cache = new NodeCache({ stdTTL: 300 });
 
-const generatepatientId = async () => {
-  const Patient = await Patients.find({}, { patientId: 1, _id: 0 }).sort({
-    patientId: 1,
-  });
-  const patientIds = Patient.map((Patient) =>
-    parseInt(Patient.patientId.replace("patientId", ""), 10)
-  );
+// const generatepatientId = async () => {
+//   const Patient = await Patients.find({}, { patientId: 1, _id: 0 }).sort({
+//     patientId: 1,
+//   });
+//   const patientIds = Patient.map((Patient) =>
+//     parseInt(Patient.patientId.replace("patientId", ""), 10)
+//   );
 
-  let patientId = 1;
-  for (let i = 0; i < patientIds.length; i++) {
-    if (patientId < patientIds[i]) {
-      break;
-    }
-    patientId++;
-  }
+//   let patientId = 1;
+//   for (let i = 0; i < patientIds.length; i++) {
+//     if (patientId < patientIds[i]) {
+//       break;
+//     }
+//     patientId++;
+//   }
 
-  return `patientId${String(patientId).padStart(4, "0")}`;
-};
+//   return `patientId${String(patientId).padStart(4, "0")}`;
+// };
 
 exports.createPatients = async (req, res) => {
   try {
-    const patientId = await generatepatientId();
+    const patientId = await generateCustomId(
+      Patients,
+      "patientId",
+      "patientId"
+    );
 
     const patientsData = { ...req.body, patientId };
     const newPatient = new Patients(patientsData);
