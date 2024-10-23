@@ -3,6 +3,7 @@ const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
 const bcrypt = require("bcryptjs");
+
 const generateCustomId = require("../middlewares/generateCustomId");
 const { generateToken } = require("../middlewares/jsontoken");
 
@@ -79,3 +80,5 @@ exports.loginUser = async (req, res) => {
 };
 
 exports.deleteUser = async (req, res) => {};
+
+

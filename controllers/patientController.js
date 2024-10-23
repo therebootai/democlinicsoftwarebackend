@@ -107,3 +107,84 @@ exports.getPatients = async (req, res) => {
     });
   }
 };
+
+exports.updatePatients = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const updateData = req.body;
+
+    if (!patientId) {
+      return res.status(400).json({
+        message: "Patient ID is required",
+      });
+    }
+
+    // Find and update patient record based on the provided patientId
+    const updatedPatient = await Patients.findOneAndUpdate(
+      { patientId }, // Find by patientId
+      { $set: updateData }, // Only update fields provided in req.body
+      { new: true, runValidators: true } // Return updated document and run validations
+    );
+
+    if (!updatedPatient) {
+      return res.status(404).json({
+        message: "Patient not found",
+      });
+    }
+
+    // Invalidate related cache keys after update
+    const cacheKeysToInvalidate = cache
+      .keys()
+      .filter((key) => key.includes("allPatients") || key.includes("page:"));
+    cacheKeysToInvalidate.forEach((key) => cache.del(key));
+
+    res.status(200).json({
+      message: "Patient Updated Successfully",
+      data: updatedPatient,
+    });
+  } catch (error) {
+    console.error("Error updating Patient:", error);
+    res.status(500).json({
+      message: "Error updating Patient",
+      error: error.message,
+    });
+  }
+};
+
+exports.deletePatients = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+
+    if (!patientId) {
+      return res.status(400).json({
+        message: "Patient ID is required",
+      });
+    }
+
+    // Delete patient record based on patientId
+    const deletedPatient = await Patients.findOneAndDelete({ patientId });
+
+    if (!deletedPatient) {
+      return res.status(404).json({
+        message: "Patient not found",
+      });
+    }
+
+    // Invalidate related cache keys after deletion
+    const cacheKeysToInvalidate = cache
+      .keys()
+      .filter((key) => key.includes("allPatients") || key.includes("page:"));
+    cacheKeysToInvalidate.forEach((key) => cache.del(key));
+
+    res.status(200).json({
+      message: "Patient Deleted Successfully",
+      data: deletedPatient,
+    });
+  } catch (error) {
+    console.error("Error deleting Patient:", error);
+    res.status(500).json({
+      message: "Error deleting Patient",
+      error: error.message,
+    });
+  }
+};
