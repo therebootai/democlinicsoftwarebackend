@@ -4,6 +4,9 @@ const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
 const bcrypt = require("bcryptjs");
 
+const generateCustomId = require("../middlewares/generateCustomId");
+const { generateToken } = require("../middlewares/jsontoken");
+
 dotenv.config();
 // Get all users
 exports.getAllUsers = async (req, res) => {
@@ -19,6 +22,8 @@ exports.getAllUsers = async (req, res) => {
 exports.createUser = async (req, res) => {
   const { name, email, phone, password, role } = req.body;
 
+  const userId = await generateCustomId(User, "userId");
+
   // Validate required fields
   if (!name || !email || !phone || !password || !role) {
     return res.status(400).json({ message: "All fields are required" });
@@ -32,15 +37,11 @@ exports.createUser = async (req, res) => {
     }
 
     // Create new user
-    const newUser = new User({ name, email, phone, password, role });
+    const newUser = new User({ userId, name, email, phone, password, role });
     const savedUser = await newUser.save();
 
     // Generate JWT token
-    const token = jwt.sign(
-      { id: savedUser._id, email: savedUser.email },
-      process.env.SECRET_KEY,
-      { expiresIn: "1h" }
-    );
+    const token = generateToken(savedUser);
 
     // Respond with the created user and token
     res.status(201).json({ user: savedUser, token });
@@ -70,14 +71,14 @@ exports.loginUser = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    const token = jwt.sign(
-      { id: user._id.toString(), password: user.password, name: user.name },
-      process.env.SECRET_KEY,
-      { expiresIn: "1h" }
-    );
+    const token = generateToken(user);
 
     res.status(200).json({ user, token, name: user.name });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
+
+exports.deleteUser = async (req, res) => {};
+
+
