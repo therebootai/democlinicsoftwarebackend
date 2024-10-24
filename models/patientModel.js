@@ -1,6 +1,12 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
+const oralFindingSchema = new Schema({
+  oralFindingName: [String],
+  oralFindingArea: [String],
+  oralFindingAdditionalNotes: [String],
+});
+
 const patientSchema = new Schema({
   patientId: {
     type: String,
@@ -20,6 +26,7 @@ const patientSchema = new Schema({
   diabetes: { type: String },
   priority: { type: String },
   paymentMethod: { type: String },
+  oralFinding: [oralFindingSchema],
   appointmentdate: { type: Date, default: Date.now },
 });
 
