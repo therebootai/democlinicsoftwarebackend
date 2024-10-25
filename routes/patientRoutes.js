@@ -26,5 +26,9 @@ router.delete(
 );
 
 router.delete("/delete/:patientId", patientController.deletePatients);
+router.delete(
+  "/delete/:patientId/prescription/:prescriptionId",
+  patientController.deletePatientPrescription
+);
 
 module.exports = router;

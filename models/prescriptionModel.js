@@ -1,24 +1,22 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
-const generateCustomId = require("../middlewares/generateCustomId"); // Import custom ID generator
 
-// Define the schemas for each subdocument with a custom ID field
 const oralFindingSchema = new Schema({
-  oralFindingId: { type: String }, // Custom ID field
+  oralFindingId: { type: String },
   oralFindingName: { type: String },
   oralFindingArea: [String],
   oralFindingAdditionalNotes: { type: String },
 });
 
 const dentalProcedureSchema = new Schema({
-  dentalProcedureId: { type: String }, // Custom ID field
+  dentalProcedureId: { type: String },
   dentalProcedureRCTName: { type: String },
   dentalProcedureRCTArea: [String],
   dentalProcedureRCTAdditionalNotes: { type: String },
 });
 
 const vitalsSchema = new Schema({
-  vitalsId: { type: String }, // Custom ID field
+  vitalsId: { type: String },
   pulseRate: { type: String },
   bloodPressure: { type: String },
   bloodTemperature: { type: String },
@@ -34,13 +32,13 @@ const vitalsSchema = new Schema({
 });
 
 const medicalHistorySchema = new Schema({
-  medicalHistoryId: { type: String }, // Custom ID field
+  medicalHistoryId: { type: String },
   medicalHistoryName: { type: String },
   medicalHistoryduration: { type: String },
 });
 
 const symptomSchema = new Schema({
-  symptomId: { type: String }, // Custom ID field
+  symptomId: { type: String },
   symptomsName: { type: String },
   symptomsNameText: { type: String },
   symptomsDuration: { type: String },
@@ -52,7 +50,7 @@ const symptomSchema = new Schema({
 });
 
 const diagnosisSchema = new Schema({
-  diagnosisId: { type: String }, // Custom ID field
+  diagnosisId: { type: String },
   diagnosisName: { type: String },
   diagnosisNameText: { type: String },
   diagnosisDuration: { type: String },
@@ -62,7 +60,7 @@ const diagnosisSchema = new Schema({
 });
 
 const medicationsSchema = new Schema({
-  medicationId: { type: String }, // Custom ID field
+  medicationId: { type: String },
   medicineName: { type: String },
   medicineDose: { type: String },
   medicineFrequency: { type: String },
@@ -74,13 +72,13 @@ const medicationsSchema = new Schema({
 });
 
 const referDoctorSchema = new Schema({
-  referDoctorId: { type: String }, // Custom ID field
+  referDoctorId: { type: String },
   referDoctor: { type: String },
 });
 
 // Main prescription schema
 const prescriptionSchema = new Schema({
-  prescriptionId: { type: String }, // Custom ID for the prescription itself
+  prescriptionId: { type: String },
   oralFinding: [oralFindingSchema],
   dentalProcedure: [dentalProcedureSchema],
   vitals: [vitalsSchema],
@@ -89,105 +87,114 @@ const prescriptionSchema = new Schema({
   diagnosis: [diagnosisSchema],
   medications: [medicationsSchema],
   referDoctor: [referDoctorSchema],
+  prescriptionGenerateDate: { type: Date, default: Date.now },
 });
 
-// Pre-save hook to generate custom IDs for new items in array fields
+prescriptionSchema.pre("save", function (next) {
+  const prescriptionGenerateDate = this.prescriptionGenerateDate;
+  const formattedDate = prescriptionGenerateDate.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  this.prescriptionGenerateDate = formattedDate;
+  next();
+});
+
+async function assignSequentialIds(model, subdocumentArray, idField, prefix) {
+  let currentMaxId = 1;
+
+  const latestEntry = await model
+    .findOne({ [`${idField}`]: { $regex: `^${prefix}` } })
+    .sort({ [idField]: -1 })
+    .exec();
+
+  if (latestEntry && latestEntry[idField]) {
+    const latestIdNumber = parseInt(
+      latestEntry[idField].replace(prefix, ""),
+      10
+    );
+    currentMaxId = latestIdNumber + 1;
+  }
+
+  for (const entry of subdocumentArray) {
+    if (!entry[idField]) {
+      entry[idField] = `${prefix}${String(currentMaxId).padStart(4, "0")}`;
+      currentMaxId += 1;
+    }
+  }
+}
+
 prescriptionSchema.pre("save", async function (next) {
   const prescription = this;
 
-  // Generate custom ID for the main prescription if not already set
   if (!prescription.prescriptionId) {
-    prescription.prescriptionId = await generateCustomId(
-      mongoose.model("Prescriptions"),
-      "prescriptionId",
-      "PRES"
-    );
+    const PrescriptionModel = mongoose.model("Prescriptions");
+    const latestPrescription = await PrescriptionModel.findOne()
+      .sort({ prescriptionId: -1 })
+      .exec();
+
+    const newPrescriptionId = latestPrescription
+      ? parseInt(latestPrescription.prescriptionId.replace("PRES", ""), 10) + 1
+      : 1;
+    prescription.prescriptionId = `PRES${String(newPrescriptionId).padStart(
+      4,
+      "0"
+    )}`;
   }
 
-  // Generate unique IDs for each subdocument array only if the ID is missing
+  await assignSequentialIds(
+    mongoose.model("Prescriptions"),
+    prescription.oralFinding,
+    "oralFindingId",
+    "OF"
+  );
+  await assignSequentialIds(
+    mongoose.model("Prescriptions"),
+    prescription.dentalProcedure,
+    "dentalProcedureId",
+    "DP"
+  );
+  await assignSequentialIds(
+    mongoose.model("Prescriptions"),
+    prescription.vitals,
+    "vitalsId",
+    "VIT"
+  );
+  await assignSequentialIds(
+    mongoose.model("Prescriptions"),
+    prescription.medicalHistory,
+    "medicalHistoryId",
+    "MH"
+  );
+  await assignSequentialIds(
+    mongoose.model("Prescriptions"),
+    prescription.symptoms,
+    "symptomId",
+    "SYM"
+  );
+  await assignSequentialIds(
+    mongoose.model("Prescriptions"),
+    prescription.diagnosis,
+    "diagnosisId",
+    "DIA"
+  );
+  await assignSequentialIds(
+    mongoose.model("Prescriptions"),
+    prescription.medications,
+    "medicationId",
+    "MED"
+  );
+  await assignSequentialIds(
+    mongoose.model("Prescriptions"),
+    prescription.referDoctor,
+    "referDoctorId",
+    "RD"
+  );
 
-  for (const oralFinding of prescription.oralFinding) {
-    if (!oralFinding.oralFindingId) {
-      oralFinding.oralFindingId = await generateCustomId(
-        mongoose.model("Prescriptions"),
-        "oralFindingId",
-        "OF"
-      );
-    }
-  }
-
-  for (const dentalProcedure of prescription.dentalProcedure) {
-    if (!dentalProcedure.dentalProcedureId) {
-      dentalProcedure.dentalProcedureId = await generateCustomId(
-        mongoose.model("Prescriptions"),
-        "dentalProcedureId",
-        "DP"
-      );
-    }
-  }
-
-  for (const vitals of prescription.vitals) {
-    if (!vitals.vitalsId) {
-      vitals.vitalsId = await generateCustomId(
-        mongoose.model("Prescriptions"),
-        "vitalsId",
-        "VIT"
-      );
-    }
-  }
-
-  for (const medicalHistory of prescription.medicalHistory) {
-    if (!medicalHistory.medicalHistoryId) {
-      medicalHistory.medicalHistoryId = await generateCustomId(
-        mongoose.model("Prescriptions"),
-        "medicalHistoryId",
-        "MH"
-      );
-    }
-  }
-
-  for (const symptom of prescription.symptoms) {
-    if (!symptom.symptomId) {
-      symptom.symptomId = await generateCustomId(
-        mongoose.model("Prescriptions"),
-        "symptomId",
-        "SYM"
-      );
-    }
-  }
-
-  for (const diagnosis of prescription.diagnosis) {
-    if (!diagnosis.diagnosisId) {
-      diagnosis.diagnosisId = await generateCustomId(
-        mongoose.model("Prescriptions"),
-        "diagnosisId",
-        "DIA"
-      );
-    }
-  }
-
-  for (const medication of prescription.medications) {
-    if (!medication.medicationId) {
-      medication.medicationId = await generateCustomId(
-        mongoose.model("Prescriptions"),
-        "medicationId",
-        "MED"
-      );
-    }
-  }
-
-  for (const referDoctor of prescription.referDoctor) {
-    if (!referDoctor.referDoctorId) {
-      referDoctor.referDoctorId = await generateCustomId(
-        mongoose.model("Prescriptions"),
-        "referDoctorId",
-        "RD"
-      );
-    }
-  }
-
-  next(); // Call next() to proceed with the save operation
+  next();
 });
 
-// Export the model
 module.exports = mongoose.model("Prescriptions", prescriptionSchema);

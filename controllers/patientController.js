@@ -231,25 +231,23 @@ exports.updatePatientWithPrescription = async (req, res) => {
     const { prescriptions } = req.body;
 
     if (!patientId) {
-      return res.status(400).json({
-        message: "Patient ID is required",
-      });
+      return res.status(400).json({ message: "Patient ID is required" });
     }
 
     if (!prescriptions || prescriptions.length === 0) {
-      return res.status(400).json({
-        message: "Prescription data is required",
-      });
+      return res.status(400).json({ message: "Prescription data is required" });
     }
 
     const prescriptionIds = [];
 
+    // Loop through each prescription and save it without handling customId generation here
     for (let prescriptionData of prescriptions) {
       const newPrescription = new Prescriptions(prescriptionData);
-      const savedPrescription = await newPrescription.save();
+      const savedPrescription = await newPrescription.save(); // Model's pre-save hook will generate unique IDs
       prescriptionIds.push(savedPrescription._id);
     }
 
+    // Update the patient's prescriptions array with the new prescription IDs
     const updatedPatient = await Patients.findOneAndUpdate(
       { patientId },
       { $push: { prescriptions: { $each: prescriptionIds } } },
@@ -257,11 +255,10 @@ exports.updatePatientWithPrescription = async (req, res) => {
     );
 
     if (!updatedPatient) {
-      return res.status(404).json({
-        message: "Patient not found",
-      });
+      return res.status(404).json({ message: "Patient not found" });
     }
 
+    // Invalidate cache for relevant keys if using caching
     const cacheKeysToInvalidate = cache
       .keys()
       .filter((key) => key.includes("allPatients") || key.includes("page:"));
@@ -431,6 +428,63 @@ exports.deleteSubdocumentEntry = async (req, res) => {
     });
   }
 };
+// if patient have two prescription or more if wANT ANY onw are delete then one have delte function
+exports.deletePatientPrescription = async (req, res) => {
+  try {
+    const { patientId, prescriptionId } = req.params;
+
+    if (!patientId || !prescriptionId) {
+      return res.status(400).json({
+        message: "Patient ID and Prescription ID are required",
+      });
+    }
+
+    const patient = await Patients.findOne({ patientId }).populate(
+      "prescriptions"
+    );
+    if (!patient) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    const prescriptionToDelete = patient.prescriptions.find(
+      (p) => p.prescriptionId === prescriptionId
+    );
+
+    if (!prescriptionToDelete) {
+      return res.status(404).json({
+        message: "Prescription not found for this patient",
+      });
+    }
+
+    patient.prescriptions = patient.prescriptions.filter(
+      (p) => p.prescriptionId !== prescriptionId
+    );
+    await patient.save();
+
+    const deletedPrescription = await Prescriptions.findOneAndDelete({
+      prescriptionId: prescriptionId,
+    });
+
+    if (!deletedPrescription) {
+      return res.status(404).json({ message: "Prescription not found" });
+    }
+    const cacheKeysToInvalidate = cache
+      .keys()
+      .filter((key) => key.includes("allPatients") || key.includes("page:"));
+    cacheKeysToInvalidate.forEach((key) => cache.del(key));
+
+    res.status(200).json({
+      message: "Prescription deleted successfully",
+      data: deletedPrescription,
+    });
+  } catch (error) {
+    console.error("Error deleting prescription:", error);
+    res.status(500).json({
+      message: "Error deleting prescription",
+      error: error.message,
+    });
+  }
+};
 // full one patient are delete
 exports.deletePatients = async (req, res) => {
   try {
@@ -442,29 +496,32 @@ exports.deletePatients = async (req, res) => {
       });
     }
 
-    // Delete patient record based on patientId
-    const deletedPatient = await Patients.findOneAndDelete({ patientId });
-
-    if (!deletedPatient) {
+    const patientToDelete = await Patients.findOne({ patientId }).lean();
+    if (!patientToDelete) {
       return res.status(404).json({
         message: "Patient not found",
       });
     }
 
-    // Invalidate related cache keys after deletion
+    const prescriptionIds = patientToDelete.prescriptions;
+
+    const deletedPatient = await Patients.findOneAndDelete({ patientId });
+
+    await Prescriptions.deleteMany({ _id: { $in: prescriptionIds } });
+
     const cacheKeysToInvalidate = cache
       .keys()
       .filter((key) => key.includes("allPatients") || key.includes("page:"));
     cacheKeysToInvalidate.forEach((key) => cache.del(key));
 
     res.status(200).json({
-      message: "Patient Deleted Successfully",
+      message: "Patient and associated prescriptions deleted successfully",
       data: deletedPatient,
     });
   } catch (error) {
-    console.error("Error deleting Patient:", error);
+    console.error("Error deleting patient:", error);
     res.status(500).json({
-      message: "Error deleting Patient",
+      message: "Error deleting patient",
       error: error.message,
     });
   }
