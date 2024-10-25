@@ -1,4 +1,5 @@
 const generateCustomId = require("../middlewares/generateCustomId");
+const Prescriptions = require("../models/prescriptionModel");
 const Patients = require("../models/patientModel");
 const NodeCache = require("node-cache");
 const cache = new NodeCache({ stdTTL: 300 });
@@ -24,14 +25,36 @@ const cache = new NodeCache({ stdTTL: 300 });
 
 exports.createPatients = async (req, res) => {
   try {
+    // Generate a custom patientId
     const patientId = await generateCustomId(
       Patients,
       "patientId",
       "patientId"
     );
 
-    const patientsData = { ...req.body, patientId };
-    const newPatient = new Patients(patientsData);
+    // Extract prescription data from the request body
+    const { prescriptions, ...patientData } = req.body;
+
+    // Array to store the prescription ObjectIds after saving them
+    const prescriptionIds = [];
+
+    // Check if prescription data is provided
+    if (prescriptions && prescriptions.length > 0) {
+      // Loop through each prescription in the request body and save them
+      for (let prescription of prescriptions) {
+        const newPrescription = new Prescriptions(prescription);
+        const savedPrescription = await newPrescription.save();
+        // Store the saved prescription _id
+        prescriptionIds.push(savedPrescription._id);
+      }
+    }
+
+    // Now create the patient with the generated prescription ObjectIds
+    const newPatient = new Patients({
+      ...patientData, // Spread other patient data
+      patientId, // Add generated patientId
+      prescriptions: prescriptionIds, // Add the prescription ObjectIds
+    });
 
     await newPatient.save();
 
@@ -78,14 +101,13 @@ exports.getPatients = async (req, res) => {
       return res.status(200).json(cachedPatients);
     }
 
+    // Use Mongoose's `find` with `populate` to get patients and their prescriptions
     const totalDocuments = await Patients.countDocuments(match);
-
-    const pipeline = [{ $match: match }];
-    pipeline.push({ $sort: { createdAt: -1 } });
-    pipeline.push({ $skip: skip });
-    pipeline.push({ $limit: limit });
-
-    const patients = await Patients.aggregate(pipeline);
+    const patients = await Patients.find(match)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate("prescriptions"); // Populate prescriptions field with full prescription data
 
     const totalPages = Math.ceil(totalDocuments / limit);
 

@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
+const Prescriptions = require("./prescriptionModel");
 
 const patientSchema = new Schema({
   patientId: {
@@ -20,6 +21,7 @@ const patientSchema = new Schema({
   diabetes: { type: String },
   priority: { type: String },
   paymentMethod: { type: String },
+  prescriptions: [{ type: Schema.Types.ObjectId, ref: Prescriptions }],
   appointmentdate: { type: Date, default: Date.now },
 });
 
