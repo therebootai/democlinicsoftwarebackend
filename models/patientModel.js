@@ -21,7 +21,7 @@ const patientSchema = new Schema({
   diabetes: { type: String },
   priority: { type: String },
   paymentMethod: { type: String },
-  prescriptions: [{ type: Schema.Types.ObjectId, ref: Prescriptions }],
+  prescriptions: [{ type: Schema.Types.ObjectId, ref: "Prescriptions" }],
   appointmentdate: { type: Date, default: Date.now },
 });
 

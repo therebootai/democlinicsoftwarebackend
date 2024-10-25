@@ -3,62 +3,36 @@ const Prescriptions = require("../models/prescriptionModel");
 const Patients = require("../models/patientModel");
 const NodeCache = require("node-cache");
 const cache = new NodeCache({ stdTTL: 300 });
-
-// const generatepatientId = async () => {
-//   const Patient = await Patients.find({}, { patientId: 1, _id: 0 }).sort({
-//     patientId: 1,
-//   });
-//   const patientIds = Patient.map((Patient) =>
-//     parseInt(Patient.patientId.replace("patientId", ""), 10)
-//   );
-
-//   let patientId = 1;
-//   for (let i = 0; i < patientIds.length; i++) {
-//     if (patientId < patientIds[i]) {
-//       break;
-//     }
-//     patientId++;
-//   }
-
-//   return `patientId${String(patientId).padStart(4, "0")}`;
-// };
-
+// create patient
 exports.createPatients = async (req, res) => {
   try {
-    // Generate a custom patientId
     const patientId = await generateCustomId(
       Patients,
       "patientId",
       "patientId"
     );
 
-    // Extract prescription data from the request body
     const { prescriptions, ...patientData } = req.body;
 
-    // Array to store the prescription ObjectIds after saving them
     const prescriptionIds = [];
 
-    // Check if prescription data is provided
     if (prescriptions && prescriptions.length > 0) {
-      // Loop through each prescription in the request body and save them
       for (let prescription of prescriptions) {
         const newPrescription = new Prescriptions(prescription);
         const savedPrescription = await newPrescription.save();
-        // Store the saved prescription _id
+
         prescriptionIds.push(savedPrescription._id);
       }
     }
 
-    // Now create the patient with the generated prescription ObjectIds
     const newPatient = new Patients({
-      ...patientData, // Spread other patient data
-      patientId, // Add generated patientId
-      prescriptions: prescriptionIds, // Add the prescription ObjectIds
+      ...patientData,
+      patientId,
+      prescriptions: prescriptionIds,
     });
 
     await newPatient.save();
 
-    // Invalidate cache keys related to patients
     const cacheKeysToInvalidate = cache
       .keys()
       .filter((key) => key.includes("allPatients") || key.includes("page:"));
@@ -76,7 +50,7 @@ exports.createPatients = async (req, res) => {
     });
   }
 };
-
+// get all functionm
 exports.getPatients = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -101,13 +75,12 @@ exports.getPatients = async (req, res) => {
       return res.status(200).json(cachedPatients);
     }
 
-    // Use Mongoose's `find` with `populate` to get patients and their prescriptions
     const totalDocuments = await Patients.countDocuments(match);
     const patients = await Patients.find(match)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .populate("prescriptions"); // Populate prescriptions field with full prescription data
+      .populate("prescriptions");
 
     const totalPages = Math.ceil(totalDocuments / limit);
 
@@ -129,7 +102,7 @@ exports.getPatients = async (req, res) => {
     });
   }
 };
-
+// patient data update
 exports.updatePatients = async (req, res) => {
   try {
     const { patientId } = req.params;
@@ -141,11 +114,10 @@ exports.updatePatients = async (req, res) => {
       });
     }
 
-    // Find and update patient record based on the provided patientId
     const updatedPatient = await Patients.findOneAndUpdate(
-      { patientId }, // Find by patientId
-      { $set: updateData }, // Only update fields provided in req.body
-      { new: true, runValidators: true } // Return updated document and run validations
+      { patientId },
+      { $set: updateData },
+      { new: true, runValidators: true }
     );
 
     if (!updatedPatient) {
@@ -154,7 +126,6 @@ exports.updatePatients = async (req, res) => {
       });
     }
 
-    // Invalidate related cache keys after update
     const cacheKeysToInvalidate = cache
       .keys()
       .filter((key) => key.includes("allPatients") || key.includes("page:"));
@@ -173,6 +144,294 @@ exports.updatePatients = async (req, res) => {
   }
 };
 
+// add more array item , under prescription more item are create like if oralfinding have one array if want create two array then create once function
+exports.addSubdocumentEntry = async (req, res) => {
+  try {
+    const { patientId, prescriptionId, subdocument } = req.params;
+    const newEntry = req.body;
+
+    if (!patientId || !prescriptionId || !subdocument) {
+      return res.status(400).json({
+        message: "Patient ID, Prescription ID, and Subdocument are required",
+      });
+    }
+
+    const idPrefixMap = {
+      oralFinding: "OF",
+      vitals: "VIT",
+      dentalProcedure: "DP",
+      medications: "MED",
+      symptoms: "SYM",
+      diagnosis: "DIA",
+      referDoctor: "RD",
+      medicalHistory: "MH",
+    };
+
+    if (!idPrefixMap[subdocument]) {
+      return res.status(400).json({ message: "Invalid subdocument type" });
+    }
+
+    const patient = await Patients.findOne({ patientId }).populate(
+      "prescriptions"
+    );
+    if (!patient) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    const prescription = patient.prescriptions.find(
+      (prescription) => prescription.prescriptionId === prescriptionId
+    );
+    if (!prescription) {
+      return res.status(404).json({ message: "Prescription not found" });
+    }
+
+    const existingEntries = prescription[subdocument];
+    const newIdNumber =
+      existingEntries.length > 0
+        ? Math.max(
+            ...existingEntries.map((entry) => {
+              const numPart = parseInt(
+                entry[`${subdocument}Id`].replace(idPrefixMap[subdocument], ""),
+                10
+              );
+              return isNaN(numPart) ? 0 : numPart;
+            })
+          ) + 1
+        : 1;
+    const newCustomId = `${idPrefixMap[subdocument]}${String(
+      newIdNumber
+    ).padStart(4, "0")}`;
+    newEntry[`${subdocument}Id`] = newCustomId;
+
+    existingEntries.push(newEntry);
+    const cacheKeysToInvalidate = cache
+      .keys()
+      .filter((key) => key.includes("allPatients") || key.includes("page:"));
+    cacheKeysToInvalidate.forEach((key) => cache.del(key));
+
+    await prescription.save();
+
+    res.status(200).json({
+      message: `${subdocument} entry added successfully`,
+      data: prescription,
+    });
+  } catch (error) {
+    console.error("Error adding subdocument entry:", error);
+    res.status(500).json({
+      message: "Error adding subdocument entry",
+      error: error.message,
+    });
+  }
+};
+
+// Update Patient with New Prescriptions Using prescriptionId create prescription part for patient
+exports.updatePatientWithPrescription = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { prescriptions } = req.body;
+
+    if (!patientId) {
+      return res.status(400).json({
+        message: "Patient ID is required",
+      });
+    }
+
+    if (!prescriptions || prescriptions.length === 0) {
+      return res.status(400).json({
+        message: "Prescription data is required",
+      });
+    }
+
+    const prescriptionIds = [];
+
+    for (let prescriptionData of prescriptions) {
+      const newPrescription = new Prescriptions(prescriptionData);
+      const savedPrescription = await newPrescription.save();
+      prescriptionIds.push(savedPrescription._id);
+    }
+
+    const updatedPatient = await Patients.findOneAndUpdate(
+      { patientId },
+      { $push: { prescriptions: { $each: prescriptionIds } } },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedPatient) {
+      return res.status(404).json({
+        message: "Patient not found",
+      });
+    }
+
+    const cacheKeysToInvalidate = cache
+      .keys()
+      .filter((key) => key.includes("allPatients") || key.includes("page:"));
+    cacheKeysToInvalidate.forEach((key) => cache.del(key));
+
+    res.status(200).json({
+      message: "Prescription data added successfully",
+      data: updatedPatient,
+    });
+  } catch (error) {
+    console.error("Error updating patient with prescription:", error);
+    res.status(500).json({
+      message: "Error updating patient with prescription",
+      error: error.message,
+    });
+  }
+};
+// edit under prescription like find medical and update only medicalHistoryName
+exports.updatePatientSubdocumentEntry = async (req, res) => {
+  try {
+    const { patientId, prescriptionId, subdocument, customId } = req.params;
+    const updateData = req.body;
+
+    if (!patientId || !prescriptionId || !subdocument || !customId) {
+      return res.status(400).json({
+        message:
+          "Patient ID, Prescription ID, Subdocument type, and Custom ID are required",
+      });
+    }
+
+    const customIdFieldMap = {
+      medications: "medicationId",
+      vitals: "vitalsId",
+      oralFinding: "oralFindingId",
+      dentalProcedure: "dentalProcedureId",
+      medicalHistory: "medicalHistoryId",
+      symptoms: "symptomId",
+      diagnosis: "diagnosisId",
+      referDoctor: "referDoctorId",
+    };
+
+    const customIdField = customIdFieldMap[subdocument];
+    if (!customIdField) {
+      return res.status(400).json({
+        message: "Invalid subdocument type",
+      });
+    }
+
+    const patient = await Patients.findOne({ patientId }).populate(
+      "prescriptions"
+    );
+    if (!patient) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    const prescription = patient.prescriptions.find(
+      (prescription) => prescription.prescriptionId === prescriptionId
+    );
+    if (!prescription) {
+      return res.status(404).json({ message: "Prescription not found" });
+    }
+
+    const subdocumentArray = prescription[subdocument];
+    const entry = subdocumentArray.find(
+      (item) => item[customIdField] === customId
+    );
+
+    if (!entry) {
+      return res
+        .status(404)
+        .json({ message: `${subdocument} entry not found` });
+    }
+
+    Object.assign(entry, updateData);
+
+    const cacheKeysToInvalidate = cache
+      .keys()
+      .filter((key) => key.includes("allPatients") || key.includes("page:"));
+    cacheKeysToInvalidate.forEach((key) => cache.del(key));
+
+    await prescription.save();
+
+    res.status(200).json({
+      message: `${subdocument} entry updated successfully`,
+      data: prescription,
+    });
+  } catch (error) {
+    console.error("Error updating subdocument entry:", error);
+    res.status(500).json({
+      message: "Error updating subdocument entry",
+      error: error.message,
+    });
+  }
+};
+// delete any of the array element like if oral finding have two array then if want then one is delete
+exports.deleteSubdocumentEntry = async (req, res) => {
+  try {
+    const { patientId, prescriptionId, subdocument, customId } = req.params;
+
+    if (!patientId || !prescriptionId || !subdocument || !customId) {
+      return res.status(400).json({
+        message:
+          "Patient ID, Prescription ID, Subdocument type, and Custom ID are required",
+      });
+    }
+
+    const customIdFieldMap = {
+      medications: "medicationId",
+      vitals: "vitalsId",
+      oralFinding: "oralFindingId",
+      dentalProcedure: "dentalProcedureId",
+      medicalHistory: "medicalHistoryId",
+      symptoms: "symptomId",
+      diagnosis: "diagnosisId",
+      referDoctor: "referDoctorId",
+    };
+
+    const customIdField = customIdFieldMap[subdocument];
+    if (!customIdField) {
+      return res.status(400).json({
+        message: "Invalid subdocument type",
+      });
+    }
+
+    const patient = await Patients.findOne({ patientId }).populate(
+      "prescriptions"
+    );
+    if (!patient) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    const prescription = patient.prescriptions.find(
+      (prescription) => prescription.prescriptionId === prescriptionId
+    );
+    if (!prescription) {
+      return res.status(404).json({ message: "Prescription not found" });
+    }
+
+    const subdocumentArray = prescription[subdocument];
+    const initialLength = subdocumentArray.length;
+
+    prescription[subdocument] = subdocumentArray.filter(
+      (item) => item[customIdField] !== customId
+    );
+
+    if (prescription[subdocument].length === initialLength) {
+      return res
+        .status(404)
+        .json({ message: `${subdocument} entry not found` });
+    }
+    const cacheKeysToInvalidate = cache
+      .keys()
+      .filter((key) => key.includes("allPatients") || key.includes("page:"));
+    cacheKeysToInvalidate.forEach((key) => cache.del(key));
+
+    await prescription.save();
+
+    res.status(200).json({
+      message: `${subdocument} entry deleted successfully`,
+      data: prescription,
+    });
+  } catch (error) {
+    console.error("Error deleting subdocument entry:", error);
+    res.status(500).json({
+      message: "Error deleting subdocument entry",
+      error: error.message,
+    });
+  }
+};
+// full one patient are delete
 exports.deletePatients = async (req, res) => {
   try {
     const { patientId } = req.params;
