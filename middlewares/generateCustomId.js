@@ -5,9 +5,15 @@ const generateCustomId = async (Model, idField, prefix) => {
   });
 
   // Extract and map the IDs, converting them to integers by stripping the prefix
-  const ids = records.map((record) =>
-    parseInt(record[idField].replace(prefix, ""), 10)
-  );
+  const ids = records
+    .map((record) => {
+      if (record[idField]) {
+        // Check if the idField exists in the record
+        return parseInt(record[idField].replace(prefix, ""), 10);
+      }
+      return null; // Return null if idField is missing
+    })
+    .filter((id) => id !== null); // Filter out any null values
 
   // Generate the next ID by finding the first available number
   let newId = 1;
