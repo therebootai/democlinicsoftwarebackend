@@ -25,6 +25,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  designation: {
+    type: String,
+    required: true,
+  },
 });
 
 // Pre-save middleware to hash password
