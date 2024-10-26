@@ -6,6 +6,6 @@ const {
 const router = express.Router();
 
 router.post("/add", addDirection);
-router.delete(":id/delete", deleteDirection);
+router.delete("/:id/delete", deleteDirection);
 
 module.exports = router;

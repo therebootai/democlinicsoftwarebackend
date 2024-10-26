@@ -14,11 +14,16 @@ exports.addDirection = async (req, res) => {
       "directionId"
     );
     let uploadedFile = req.files.file;
-    const uploadResult = await uploadFile(uploadedFile.tempFilePath);
+
+    const uploadResult = await uploadFile(
+      uploadedFile.tempFilePath,
+      uploadedFile.mimetype
+    );
     const directionDetails = new Direction({
       directionId,
       title: req.body.title,
       file: uploadResult.secure_url,
+      publicId: uploadResult.public_id,
     });
     const newDirection = await directionDetails.save();
     fs.unlink(uploadedFile.tempFilePath, (err) => {
@@ -38,11 +43,14 @@ exports.addDirection = async (req, res) => {
 exports.deleteDirection = async (req, res) => {
   try {
     const requestedDirection = await Direction.findById(req.params.id);
-    let folderName = "images";
-    if (requestedDirection.file.endsWith(".pdf")) {
-      folderName = "pdf";
+
+    const deleteResult = await deleteFile(requestedDirection.publicId);
+    
+    if (deleteResult.result != "ok") {
+      return res
+        .status(400)
+        .json({ message: "file deletation failed", success: false });
     }
-    const deleteResult = await deleteFile(folderName, requestedForm.file);
     await Direction.findByIdAndDelete(req.params.id);
     return res
       .status(200)

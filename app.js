@@ -23,13 +23,6 @@ if (!fs.existsSync(tempDir)) {
 app.use(cors());
 app.use(fileUpload({ useTempFiles: true, tempFileDir: "/temp/" }));
 app.use(express.json());
-
-app.use(
-  fileUpload({
-    useTempFiles: true,
-    tempFileDir: "/tmp/",
-  })
-);
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 

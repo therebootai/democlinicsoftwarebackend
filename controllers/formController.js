@@ -10,11 +10,15 @@ exports.addForm = async (req, res) => {
     }
     const formId = await generateCustomId(Form, "formId", "formId");
     let uploadedFile = req.files.file;
-    const uploadResult = await uploadFile(uploadedFile.tempFilePath);
+    const uploadResult = await uploadFile(
+      uploadedFile.tempFilePath,
+      uploadedFile.mimetype
+    );
     const formDetails = new Form({
       formId,
       title: req.body.title,
       file: uploadResult.secure_url,
+      publicId: uploadResult.public_id,
     });
     const newForm = await formDetails.save();
     fs.unlink(uploadedFile.tempFilePath, (err) => {
@@ -34,11 +38,14 @@ exports.addForm = async (req, res) => {
 exports.deleteForm = async (req, res) => {
   try {
     const requestedForm = await Form.findById(req.params.id);
-    let folderName = "images";
-    if (requestedForm.file.endsWith(".pdf")) {
-      folderName = "pdf";
+
+    const deleteResult = await deleteFile(requestedForm.publicId);
+    if (deleteResult.result != "ok") {
+      return res
+        .status(400)
+        .json({ message: "file deletation failed", success: false });
     }
-    const deleteResult = await deleteFile(folderName, requestedForm.file);
+    await Form.findByIdAndDelete(req.params.id);
     return res
       .status(200)
       .json({ message: "file deleted successfully", success: true });
