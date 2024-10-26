@@ -2,6 +2,10 @@ const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 const Prescriptions = require("./prescriptionModel");
 
+const patientDocumentSchema = new Schema({
+  documentTitle: { type: String },
+  documentFile: { type: String },
+});
 const patientSchema = new Schema({
   patientId: {
     type: String,
@@ -22,6 +26,7 @@ const patientSchema = new Schema({
   priority: { type: String },
   paymentMethod: { type: String },
   prescriptions: [{ type: Schema.Types.ObjectId, ref: "Prescriptions" }],
+  patientDocuments: [patientDocumentSchema],
   appointmentdate: { type: Date, default: Date.now },
 });
 
