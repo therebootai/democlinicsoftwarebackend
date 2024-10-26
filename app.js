@@ -10,6 +10,7 @@ const port = process.env.PORT;
 MongoDbConnect();
 
 const patientRoutes = require("./routes/patientRoutes");
+const addPaymentRoutes = require("./routes/addpaymentsRoutes");
 
 app.use(cors());
 
@@ -24,8 +25,8 @@ app.use(
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use("/api/user", userRoutes);
-
 app.use("/api/patients", patientRoutes);
+app.use("/api/addpayment", addPaymentRoutes);
 
 app.listen(port, () => {
   console.log(`Port starts on  ${port}`);
