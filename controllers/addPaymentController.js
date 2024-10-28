@@ -65,6 +65,57 @@ exports.getPayments = async (req, res) => {
   }
 };
 
+exports.getDropdown = async (req, res) => {
+  try {
+    const searchQuery = req.query.query;
+
+    if (!searchQuery) {
+      return res.status(400).json({ message: "Query parameter is required" });
+    }
+
+    // Fuzzy regex matching for iteamName
+    const fuzzyRegex = new RegExp(searchQuery.split("").join(".*"), "i");
+
+    const items = await addPayments.aggregate([
+      {
+        $match: {
+          iteamName: fuzzyRegex,
+        },
+      },
+      {
+        $limit: 30,
+      },
+    ]);
+
+    res.status(200).json(items);
+  } catch (error) {
+    console.error("Error searching items:", error);
+    res.status(500).json({
+      message: "Error searching items",
+      error: error.message,
+    });
+  }
+};
+
+// Get random item suggestions
+exports.getRandomSuggestions = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit, 10) || 10;
+
+    const randomItems = await addPayments.aggregate([
+      { $sample: { size: limit } },
+    ]);
+
+    res.status(200).json(randomItems);
+  } catch (error) {
+    console.error("Error fetching random suggestions:", error);
+    res.status(500).json({
+      message: "Error fetching random suggestions",
+      error: error.message,
+    });
+  }
+};
+
 exports.updatePayments = async (req, res) => {
   try {
     const { paymentId } = req.params;
