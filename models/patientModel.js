@@ -1,11 +1,13 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
-const Prescriptions = require("./prescriptionModel");
 
 const patientDocumentSchema = new Schema({
+  documentId: { type: String },
   documentTitle: { type: String },
+  publicId:{type:String},
   documentFile: { type: String },
 });
+
 const patientSchema = new Schema({
   patientId: {
     type: String,

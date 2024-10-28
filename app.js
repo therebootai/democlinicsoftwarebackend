@@ -20,6 +20,8 @@ if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
 }
 
+const addPaymentRoutes = require("./routes/addpaymentsRoutes");
+
 app.use(cors());
 app.use(fileUpload({ useTempFiles: true, tempFileDir: "/temp/" }));
 app.use(express.json());
@@ -27,8 +29,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
 app.use("/api/user", userRoutes);
-
 app.use("/api/patients", patientRoutes);
+app.use("/api/addpayment", addPaymentRoutes);
 
 app.use("/api/form", formRoutes);
 
