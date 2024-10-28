@@ -2,6 +2,7 @@ const generateCustomId = require("../middlewares/generateCustomId");
 const Prescriptions = require("../models/prescriptionModel");
 const Patients = require("../models/patientModel");
 const NodeCache = require("node-cache");
+const { uploadFile, deleteFile } = require("../middlewares/cloudinary");
 const cache = new NodeCache({ stdTTL: 300 });
 // create patient
 exports.createPatients = async (req, res) => {
@@ -522,6 +523,195 @@ exports.deletePatients = async (req, res) => {
     console.error("Error deleting patient:", error);
     res.status(500).json({
       message: "Error deleting patient",
+      error: error.message,
+    });
+  }
+};
+//Add Patient Document
+exports.addPatientDocument = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    if (!patientId) {
+      return res.status(400).json({
+        message: "Patient ID is required",
+      });
+    }
+    if (!req.files || Object.keys(req.files).length === 0) {
+      return res.status(400).send("No files were uploaded.");
+    }
+    if (!req.body.title) {
+      return res.status(400).send("Title is required.");
+    }
+
+    const documentId = await generateCustomId(
+      Patients,
+      "patientDocuments.documentId",
+      "DOC"
+    );
+    let uploadedFile = req.files.file;
+    const uploadResult = await uploadFile(
+      uploadedFile.tempFilePath,
+      uploadedFile.mimetype
+    );
+    const newDocumentData = {
+      documentId,
+      documentTitle: req.body.title,
+      publicId: uploadResult.public_id,
+      documentFile: uploadResult.secure_url,
+    };
+    const updatedPatient = await Patients.findOneAndUpdate(
+      { patientId: patientId },
+      { $push: { patientDocuments: newDocumentData } },
+      { new: true }
+    );
+
+    if (!updatedPatient) {
+      return res.status(400).json({ message: "Error adding document" });
+    }
+
+    // const cacheKeysToInvalidate = cache
+    //   .keys()
+    //   .filter((key) => key.includes("allPatients") || key.includes("page:"));
+    // cacheKeysToInvalidate.forEach((key) => cache.del(key));
+
+    res.status(200).json({
+      message: `document added successfully`,
+      data: updatedPatient,
+    });
+  } catch (error) {
+    console.error("Error adding patient document:", error);
+    res.status(500).json({
+      message: "Error adding patient document",
+      error: error.message,
+    });
+  }
+};
+//Update Patient Document
+exports.updatePatientDocument = async (req, res) => {
+  try {
+    const { patientId, documentId } = req.params;
+
+    if (!patientId || !documentId) {
+      return res.status(400).json({
+        message: "Patient ID and Document ID are required",
+      });
+    }
+
+    // Find the patient and document to retrieve the current publicId
+    const patient = await Patients.findOne(
+      { patientId, "patientDocuments.documentId": documentId },
+      { "patientDocuments.$": 1 } // Only get the matching document
+    );
+
+    if (!patient || !patient.patientDocuments.length) {
+      return res.status(404).json({ message: "Patient or document not found" });
+    }
+
+    // Retrieve the existing publicId
+    const existingDocument = patient.patientDocuments[0];
+    const existingPublicId = existingDocument.publicId;
+
+    let updatedData = {};
+
+    // If a title is provided, add it to updatedData
+    if (req.body.title) {
+      updatedData.documentTitle = req.body.title;
+    }
+
+    // If a new file is provided, delete the old one and upload the new one
+    if (req.files && req.files.file) {
+      // Delete the old file using the existing publicId
+      if (existingPublicId) {
+        await deleteFile(existingPublicId);
+      }
+
+      // Upload the new file and add to updatedData
+      let uploadedFile = req.files.file;
+      const uploadResult = await uploadFile(
+        uploadedFile.tempFilePath,
+        uploadedFile.mimetype
+      );
+      updatedData.publicId = uploadResult.public_id;
+      updatedData.documentFile = uploadResult.secure_url;
+    }
+
+    // Update the document with the new data
+    const updatedPatient = await Patients.findOneAndUpdate(
+      { patientId: patientId, "patientDocuments.documentId": documentId },
+      {
+        $set: {
+          "patientDocuments.$[doc].documentTitle": updatedData.documentTitle,
+          "patientDocuments.$[doc].publicId": updatedData.publicId,
+          "patientDocuments.$[doc].documentFile": updatedData.documentFile,
+        },
+      },
+      {
+        arrayFilters: [{ "doc.documentId": documentId }],
+        new: true,
+      }
+    );
+
+    res.status(200).json({
+      message: "Document updated successfully",
+      data: updatedPatient,
+    });
+  } catch (error) {
+    console.error("Error updating patient document:", error);
+    res.status(500).json({
+      message: "Error updating patient document",
+      error: error.message,
+    });
+  }
+};
+//Delete Patient Document
+exports.deletePatientDocument = async (req, res) => {
+  try {
+    const { patientId, documentId } = req.params;
+
+    if (!patientId || !documentId) {
+      return res.status(400).json({
+        message: "Patient ID and Document ID are required",
+      });
+    }
+
+    // Find the patient and document to retrieve the current publicId
+    const patient = await Patients.findOne(
+      { patientId, "patientDocuments.documentId": documentId },
+      { "patientDocuments.$": 1 } // Only get the matching document
+    );
+
+    if (!patient || !patient.patientDocuments.length) {
+      return res.status(404).json({ message: "Patient or document not found" });
+    }
+
+    // Retrieve the publicId of the document to be deleted
+    const documentToDelete = patient.patientDocuments[0];
+    const publicId = documentToDelete.publicId;
+
+    // Delete the file using the publicId
+    if (publicId) {
+      await deleteFile(publicId);
+    }
+
+    // Remove the document from the patientDocuments array
+    const updatedPatient = await Patients.findOneAndUpdate(
+      { patientId },
+      { $pull: { patientDocuments: { documentId } } },
+      { new: true }
+    );
+
+    if (!updatedPatient) {
+      return res.status(400).json({ message: "Error deleting document" });
+    }
+
+    res.status(200).json({
+      message: "Document deleted successfully",
+      data: updatedPatient,
+    });
+  } catch (error) {
+    console.error("Error deleting patient document:", error);
+    res.status(500).json({
+      message: "Error deleting patient document",
       error: error.message,
     });
   }
