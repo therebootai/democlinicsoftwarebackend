@@ -3,7 +3,9 @@ const Prescriptions = require("../models/prescriptionModel");
 const Patients = require("../models/patientModel");
 const NodeCache = require("node-cache");
 const { uploadFile, deleteFile } = require("../middlewares/cloudinary");
+const generateNestedCustomId = require("../middlewares/ganerateNestedCustomId");
 const cache = new NodeCache({ stdTTL: 300 });
+const User = require("../models/User");
 // create patient
 exports.createPatients = async (req, res) => {
   try {
@@ -13,23 +15,28 @@ exports.createPatients = async (req, res) => {
       "patientId"
     );
 
-    const { prescriptions, ...patientData } = req.body;
+    const { prescriptions, medicalHistory = [], ...patientData } = req.body;
 
     const prescriptionIds = [];
-
     if (prescriptions && prescriptions.length > 0) {
       for (let prescription of prescriptions) {
         const newPrescription = new Prescriptions(prescription);
         const savedPrescription = await newPrescription.save();
-
         prescriptionIds.push(savedPrescription._id);
       }
     }
+
+    const processedMedicalHistory = medicalHistory.map((historyItem) => ({
+      medicalHistoryName: historyItem.medicalHistoryName,
+      duration: historyItem.duration || "",
+      medicalHistoryMedicine: historyItem.medicines || [],
+    }));
 
     const newPatient = new Patients({
       ...patientData,
       patientId,
       prescriptions: prescriptionIds,
+      medicalHistory: processedMedicalHistory,
     });
 
     await newPatient.save();
@@ -44,6 +51,11 @@ exports.createPatients = async (req, res) => {
       data: newPatient,
     });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({
+        error: "Patient already exists.",
+      });
+    }
     console.error("Error creating Patient:", error);
     res.status(500).json({
       message: "Error creating Patient",
@@ -51,6 +63,7 @@ exports.createPatients = async (req, res) => {
     });
   }
 };
+
 // get all functionm
 exports.getPatients = async (req, res) => {
   try {
@@ -62,13 +75,47 @@ exports.getPatients = async (req, res) => {
 
     if (req.query.search) {
       const searchRegex = new RegExp(req.query.search, "i");
-      match.$or = [{ patientName: searchRegex }, { mobileNumber: searchRegex }];
+      match.$or = [
+        { patientId: searchRegex },
+        { patientName: searchRegex },
+        { mobileNumber: searchRegex },
+      ];
+    }
+
+    if (req.query.startdate || req.query.enddate) {
+      const startDate = req.query.startdate
+        ? new Date(req.query.startdate)
+        : null;
+      let endDate = req.query.enddate ? new Date(req.query.enddate) : null;
+
+      if (startDate && endDate) {
+        endDate.setHours(23, 59, 59, 999);
+        match.appointmentdate = { $gte: startDate, $lte: endDate };
+      } else if (startDate) {
+        const endOfDay = new Date(startDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        match.appointmentdate = { $gte: startDate, $lte: endOfDay };
+      }
+    }
+    if (req.query.doctorId) {
+      match.chooseDoctor = req.query.doctorId;
     }
 
     let cacheKey = `page:${page}-limit:${limit}`;
 
+    if (req.query.startdate) {
+      cacheKey += `-startdate:${req.query.startdate}`;
+    }
+    if (req.query.enddate) {
+      cacheKey += `-enddate:${req.query.enddate}`;
+    }
+
     if (req.query.search) {
       cacheKey += `-search:${req.query.search}`;
+    }
+
+    if (req.query.doctorId) {
+      cacheKey += `-doctorId:${req.query.doctorId}`;
     }
 
     const cachedPatients = cache.get(cacheKey);
@@ -78,10 +125,35 @@ exports.getPatients = async (req, res) => {
 
     const totalDocuments = await Patients.countDocuments(match);
     const patients = await Patients.find(match)
-      .sort({ createdAt: -1 })
+      .sort({ appointmentdate: -1 })
       .skip(skip)
       .limit(limit)
       .populate("prescriptions");
+
+    // Fetch doctor details for each patient if chooseDoctor exists
+    const patientsWithDoctorDetails = await Promise.all(
+      patients.map(async (patient) => {
+        const patientObj = patient.toObject();
+
+        if (patientObj.chooseDoctor) {
+          const doctor = await User.findOne({
+            userId: patientObj.chooseDoctor,
+          }).select("name phone email role designation doctorDegree");
+
+          if (doctor) {
+            patientObj.chooseDoctorDetails = {
+              name: doctor.name,
+              phone: doctor.phone,
+              email: doctor.email,
+              role: doctor.role,
+              designation: doctor.designation,
+              doctorDegree: doctor.doctorDegree,
+            };
+          }
+        }
+        return patientObj;
+      })
+    );
 
     const totalPages = Math.ceil(totalDocuments / limit);
 
@@ -89,7 +161,7 @@ exports.getPatients = async (req, res) => {
       page,
       totalPages,
       totalDocuments,
-      data: patients,
+      data: patientsWithDoctorDetails,
     };
 
     cache.set(cacheKey, result);
@@ -103,6 +175,58 @@ exports.getPatients = async (req, res) => {
     });
   }
 };
+
+exports.getPatientByPatientId = async (req, res) => {
+  const { patientId } = req.params;
+  const { prescriptionId } = req.query;
+
+  try {
+    // Fetch patient data and populate the prescriptions field
+    const patient = await Patients.findOne({ patientId }).populate(
+      "prescriptions"
+    );
+
+    if (!patient) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    let filteredPatient = patient.toObject();
+
+    if (filteredPatient.chooseDoctor) {
+      const doctor = await User.findOne({
+        userId: filteredPatient.chooseDoctor,
+      }).select("name phone email role designation doctorDegree");
+
+      if (doctor) {
+        // Add doctor details to the patient object
+        filteredPatient.chooseDoctorDetails = {
+          name: doctor.name,
+          phone: doctor.phone,
+          email: doctor.email,
+          role: doctor.role,
+          designation: doctor.designation,
+          doctorDegree: doctor.doctorDegree,
+        };
+      }
+    }
+
+    if (prescriptionId) {
+      filteredPatient.prescriptions = filteredPatient.prescriptions.filter(
+        (prescription) => prescription._id.toString() === prescriptionId
+      );
+
+      // Check if the specific prescription is found
+      if (filteredPatient.prescriptions.length === 0) {
+        return res.status(404).json({ message: "Prescription not found" });
+      }
+    }
+
+    res.status(200).json(filteredPatient);
+  } catch (error) {
+    console.error("Error fetching patient data:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
 // patient data update
 exports.updatePatients = async (req, res) => {
   try {
@@ -110,31 +234,62 @@ exports.updatePatients = async (req, res) => {
     const updateData = req.body;
 
     if (!patientId) {
-      return res.status(400).json({
-        message: "Patient ID is required",
-      });
+      return res.status(400).json({ message: "Patient ID is required" });
     }
 
-    const updatedPatient = await Patients.findOneAndUpdate(
-      { patientId },
-      { $set: updateData },
-      { new: true, runValidators: true }
-    );
-
-    if (!updatedPatient) {
-      return res.status(404).json({
-        message: "Patient not found",
-      });
+    // Find the patient document by patientId
+    const patient = await Patients.findOne({ patientId });
+    if (!patient) {
+      return res.status(404).json({ message: "Patient not found" });
     }
 
-    const cacheKeysToInvalidate = cache
-      .keys()
-      .filter((key) => key.includes("allPatients") || key.includes("page:"));
-    cacheKeysToInvalidate.forEach((key) => cache.del(key));
+    // Update fields dynamically except `paymentDetails` and `patientDocuments`
+    for (const key in updateData) {
+      if (key === "medicalHistory" && Array.isArray(updateData[key])) {
+        updateData[key].forEach((newEntry) => {
+          const existingEntry = patient.medicalHistory.find(
+            (entry) => entry.medicalHistoryName === newEntry.medicalHistoryName
+          );
+
+          if (existingEntry) {
+            // Update existing entry in medical history
+            existingEntry.medicalHistoryMedicine = [
+              ...new Set([
+                ...existingEntry.medicalHistoryMedicine,
+                ...newEntry.medicalHistoryMedicine,
+              ]),
+            ]; // Use Set to avoid duplicate medicines
+            existingEntry.duration =
+              newEntry.duration || existingEntry.duration;
+          } else {
+            // Add new entry if it doesn't exist
+            patient.medicalHistory.push(newEntry);
+          }
+        });
+      } else if (key !== "paymentDetails" && key !== "patientDocuments") {
+        // Update simple fields directly, excluding `paymentDetails` and `patientDocuments`
+        patient[key] = updateData[key];
+      }
+    }
+
+    // Cache invalidation (if necessary)
+    try {
+      const cacheKeysToInvalidate = cache
+        .keys()
+        .filter(
+          (key) => key.includes("allPrescriptions") || key.includes("page:")
+        );
+      cacheKeysToInvalidate.forEach((key) => cache.del(key));
+    } catch (cacheError) {
+      console.warn("Cache invalidation failed:", cacheError);
+    }
+
+    // Save the updated patient data
+    await patient.save();
 
     res.status(200).json({
-      message: "Patient Updated Successfully",
-      data: updatedPatient,
+      message: "Patient's data updated successfully",
+      data: patient,
     });
   } catch (error) {
     console.error("Error updating Patient:", error);
@@ -146,80 +301,125 @@ exports.updatePatients = async (req, res) => {
 };
 
 // add more array item , under prescription more item are create like if oralfinding have one array if want create two array then create once function
-exports.addSubdocumentEntry = async (req, res) => {
+exports.patientPrescriptionUpdate = async (req, res) => {
   try {
-    const { patientId, prescriptionId, subdocument } = req.params;
-    const newEntry = req.body;
+    const { patientId, prescriptionId } = req.params; // Get patientId and prescriptionId from request params
+    const updatedData = req.body; // Get updated prescription data from request body
 
-    if (!patientId || !prescriptionId || !subdocument) {
-      return res.status(400).json({
-        message: "Patient ID, Prescription ID, and Subdocument are required",
-      });
-    }
-
-    const idPrefixMap = {
-      oralFinding: "OF",
-      vitals: "VIT",
-      dentalProcedure: "DP",
-      medications: "MED",
-      symptoms: "SYM",
-      diagnosis: "DIA",
-      referDoctor: "RD",
-      medicalHistory: "MH",
-    };
-
-    if (!idPrefixMap[subdocument]) {
-      return res.status(400).json({ message: "Invalid subdocument type" });
-    }
-
+    // Validate patient existence
     const patient = await Patients.findOne({ patientId }).populate(
       "prescriptions"
     );
+
     if (!patient) {
       return res.status(404).json({ message: "Patient not found" });
     }
 
+    // Validate if prescription belongs to this patient
     const prescription = patient.prescriptions.find(
-      (prescription) => prescription.prescriptionId === prescriptionId
+      (prescription) => prescription._id.toString() === prescriptionId
     );
+
     if (!prescription) {
-      return res.status(404).json({ message: "Prescription not found" });
+      return res.status(404).json({
+        message: "Prescription not found for this patient",
+      });
     }
 
-    const existingEntries = prescription[subdocument];
-    const newIdNumber =
-      existingEntries.length > 0
-        ? Math.max(
-            ...existingEntries.map((entry) => {
-              const numPart = parseInt(
-                entry[`${subdocument}Id`].replace(idPrefixMap[subdocument], ""),
-                10
-              );
-              return isNaN(numPart) ? 0 : numPart;
-            })
-          ) + 1
-        : 1;
-    const newCustomId = `${idPrefixMap[subdocument]}${String(
-      newIdNumber
-    ).padStart(4, "0")}`;
-    newEntry[`${subdocument}Id`] = newCustomId;
+    // Update fields one by one, handling nested arrays
+    if (updatedData.chiefComplain) {
+      prescription.chiefComplain = [
+        ...prescription.chiefComplain,
+        ...updatedData.chiefComplain.filter(
+          (newItem) =>
+            !prescription.chiefComplain.some(
+              (existingItem) =>
+                existingItem.chiefComplainName === newItem.chiefComplainName
+            )
+        ),
+      ];
+    }
 
-    existingEntries.push(newEntry);
-    const cacheKeysToInvalidate = cache
-      .keys()
-      .filter((key) => key.includes("allPatients") || key.includes("page:"));
-    cacheKeysToInvalidate.forEach((key) => cache.del(key));
+    if (updatedData.onExamination) {
+      prescription.onExamination = [
+        ...prescription.onExamination,
+        ...updatedData.onExamination.filter(
+          (newItem) =>
+            !prescription.onExamination.some(
+              (existingItem) =>
+                existingItem.onExaminationName === newItem.onExaminationName
+            )
+        ),
+      ];
+    }
 
-    await prescription.save();
+    if (updatedData.investigation) {
+      prescription.investigation = [
+        ...prescription.investigation,
+        ...updatedData.investigation.filter(
+          (newItem) =>
+            !prescription.investigation.some(
+              (existingItem) =>
+                existingItem.investigationName === newItem.investigationName
+            )
+        ),
+      ];
+    }
+
+    if (updatedData.radiography) {
+      prescription.radiography = [
+        ...prescription.radiography,
+        ...updatedData.radiography.filter(
+          (newItem) =>
+            !prescription.radiography.some(
+              (existingItem) =>
+                existingItem.radiographyName === newItem.radiographyName
+            )
+        ),
+      ];
+    }
+
+    if (updatedData.advices) {
+      prescription.advices = [
+        ...prescription.advices,
+        ...updatedData.advices.filter(
+          (newItem) =>
+            !prescription.advices.some(
+              (existingItem) => existingItem.advicesName === newItem.advicesName
+            )
+        ),
+      ];
+    }
+
+    if (updatedData.medications) {
+      prescription.medications = [
+        ...prescription.medications,
+        ...updatedData.medications.filter(
+          (newItem) =>
+            !prescription.medications.some(
+              (existingItem) =>
+                existingItem.medicineBrandName === newItem.medicineBrandName &&
+                existingItem.medicineComposition === newItem.medicineComposition
+            )
+        ),
+      ];
+    }
+
+    // Save the updated prescription
+    const savedPrescription = await Prescriptions.findByIdAndUpdate(
+      prescriptionId,
+      { $set: updatedData }, // update fields
+      { new: true }
+    );
 
     res.status(200).json({
-      message: `${subdocument} entry added successfully`,
-      data: prescription,
+      message: "Prescription updated successfully",
+      data: savedPrescription,
     });
   } catch (error) {
-    console.error("Error adding subdocument entry:", error);
+    console.error("Error editing prescription:", error);
     res.status(500).json({
-      message: "Error adding subdocument entry",
+      message: "Error editing prescription",
       error: error.message,
     });
   }
@@ -231,24 +431,88 @@ exports.updatePatientWithPrescription = async (req, res) => {
     const { patientId } = req.params;
     const { prescriptions } = req.body;
 
-    if (!patientId) {
-      return res.status(400).json({ message: "Patient ID is required" });
-    }
-
-    if (!prescriptions || prescriptions.length === 0) {
-      return res.status(400).json({ message: "Prescription data is required" });
+    if (!Array.isArray(prescriptions) || prescriptions.length === 0) {
+      return res
+        .status(400)
+        .json({ message: "Prescription data must be a non-empty array" });
     }
 
     const prescriptionIds = [];
 
-    // Loop through each prescription and save it without handling customId generation here
-    for (let prescriptionData of prescriptions) {
-      const newPrescription = new Prescriptions(prescriptionData);
-      const savedPrescription = await newPrescription.save(); // Model's pre-save hook will generate unique IDs
-      prescriptionIds.push(savedPrescription._id);
+    for (const prescriptionData of prescriptions) {
+      // Check if prescriptionData is a valid object
+      if (!prescriptionData || typeof prescriptionData !== "object") {
+        return res
+          .status(400)
+          .json({ message: "Each prescription must be a valid object" });
+      }
+
+      // Create a new object to explicitly define the fields without IDs
+      const filteredPrescriptionData = {
+        chiefComplain: prescriptionData.chiefComplain
+          ? prescriptionData.chiefComplain.map((item) => ({
+              chiefComplainName: item.chiefComplainName || "",
+            }))
+          : [],
+        onExamination: prescriptionData.onExamination
+          ? prescriptionData.onExamination.map((item) => ({
+              onExaminationName: item.onExaminationName || "",
+              onExaminationArea: item.onExaminationArea || [],
+              onExaminationAdditionalNotes:
+                item.onExaminationAdditionalNotes || "",
+            }))
+          : [],
+        investigation: prescriptionData.investigation
+          ? prescriptionData.investigation.map((item) => ({
+              investigationName: item.investigationName || "",
+            }))
+          : [],
+        radiography: prescriptionData.radiography
+          ? prescriptionData.radiography.map((item) => ({
+              radiographyName: item.radiographyName || "",
+            }))
+          : [],
+        advices: prescriptionData.advices
+          ? prescriptionData.advices.map((item) => ({
+              advicesName: item.advicesName || "",
+            }))
+          : [],
+        medications: prescriptionData.medications
+          ? prescriptionData.medications.map((item) => ({
+              medicineBrandName: item.medicineBrandName || "",
+              medicineComposition: item.medicineComposition || "",
+              medicineStrength: item.medicineStrength || "",
+              medicineDose: item.medicineDose || "",
+              medicineFrequency: item.medicineFrequency || "",
+              medicineTiming: item.medicineTiming || "",
+              medicineDuration: item.medicineDuration || "",
+              medicineStartfrom: item.medicineStartfrom || "",
+              medicineInstructions: item.medicineInstructions || "",
+              medicineQuantity: item.medicineQuantity || "",
+            }))
+          : [],
+        referDoctor: prescriptionData.referDoctor
+          ? prescriptionData.referDoctor.map((item) => ({
+              referDoctor: item.referDoctor || "",
+            }))
+          : [],
+      };
+
+      try {
+        // Save the new prescription document
+        const newPrescription = new Prescriptions(filteredPrescriptionData);
+        const savedPrescription = await newPrescription.save();
+        prescriptionIds.push(savedPrescription._id);
+      } catch (saveError) {
+        console.error("Error saving individual prescription:", saveError);
+        return res.status(500).json({
+          message: "Error saving prescription to database",
+          error: saveError.message,
+        });
+      }
     }
 
-    // Update the patient's prescriptions array with the new prescription IDs
+    // Update the patient's prescriptions array after saving all prescriptions
     const updatedPatient = await Patients.findOneAndUpdate(
       { patientId },
       { $push: { prescriptions: { $each: prescriptionIds } } },
@@ -259,15 +523,10 @@ exports.updatePatientWithPrescription = async (req, res) => {
       return res.status(404).json({ message: "Patient not found" });
     }
 
-    // Invalidate cache for relevant keys if using caching
-    const cacheKeysToInvalidate = cache
-      .keys()
-      .filter((key) => key.includes("allPatients") || key.includes("page:"));
-    cacheKeysToInvalidate.forEach((key) => cache.del(key));
-
     res.status(200).json({
       message: "Prescription data added successfully",
       data: updatedPatient,
+      prescriptionIds: prescriptionIds,
     });
   } catch (error) {
     console.error("Error updating patient with prescription:", error);
@@ -277,6 +536,7 @@ exports.updatePatientWithPrescription = async (req, res) => {
     });
   }
 };
+
 // edit under prescription like find medical and update only medicalHistoryName
 exports.updatePatientSubdocumentEntry = async (req, res) => {
   try {
@@ -712,6 +972,108 @@ exports.deletePatientDocument = async (req, res) => {
     console.error("Error deleting patient document:", error);
     res.status(500).json({
       message: "Error deleting patient document",
+      error: error.message,
+    });
+  }
+};
+
+exports.addPaymentDetails = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { paymentMethod, paymentDetails, totalCharges } = req.body;
+
+    if (!patientId) {
+      return res.status(400).json({ message: "Patient ID is required" });
+    }
+    if (!paymentDetails || paymentDetails.length === 0) {
+      return res.status(400).json({ message: "Payment details are missing" });
+    }
+
+    // Generate a unique payment ID for this payment group
+    const paymentId = await generateNestedCustomId(
+      Patients,
+      "paymentDetails",
+      "paymentId"
+    );
+
+    // Structure the payment data with a single paymentMethod and nested payment details
+    const newPaymentData = {
+      paymentId,
+      paymentMethod,
+      totalCharges,
+      paymentDetails: paymentDetails.map((detail) => ({
+        iteamName: detail.iteamName,
+        iteamCharges: detail.iteamCharges,
+        paymentDescription: detail.paymentDescription,
+      })),
+    };
+
+    // Push the new payment data into paymentDetails array
+    const updatedPatient = await Patients.findOneAndUpdate(
+      { patientId: patientId },
+      { $push: { paymentDetails: newPaymentData } },
+      { new: true }
+    );
+
+    if (!updatedPatient) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+    const cacheKeysToInvalidate = cache
+      .keys()
+      .filter((key) => key.includes("allPatients") || key.includes("page:"));
+    cacheKeysToInvalidate.forEach((key) => cache.del(key));
+
+    res.status(200).json({
+      message: "Payment details added successfully",
+      paymentId: paymentId,
+      data: updatedPatient,
+    });
+  } catch (error) {
+    console.error("Error adding payment details:", error);
+    res
+      .status(500)
+      .json({ message: "Error adding payment details", error: error.message });
+  }
+};
+
+exports.updatePaymentDetails = async (req, res) => {
+  try {
+    const { patientId, paymentId } = req.params;
+    const { paymentDetails, totalCharges } = req.body;
+
+    // Ensure patientId and paymentId are provided
+    if (!patientId || !paymentId) {
+      return res
+        .status(400)
+        .json({ message: "Patient ID and Payment ID are required" });
+    }
+
+    // Find and update the payment record with matching `paymentId` in `paymentDetails`
+    const updatedPatient = await Patients.findOneAndUpdate(
+      { patientId, "paymentDetails.paymentId": paymentId },
+      {
+        $set: {
+          "paymentDetails.$.paymentDetails": paymentDetails,
+          "paymentDetails.$.totalCharges": totalCharges,
+        },
+      },
+      { new: true }
+    );
+
+    if (!updatedPatient) {
+      return res
+        .status(404)
+        .json({ message: "Payment record not found for update" });
+    }
+
+    res.status(200).json({
+      message: "Payment details updated successfully",
+      data: updatedPatient,
+    });
+  } catch (error) {
+    console.error("Error updating payment details:", error);
+    res.status(500).json({
+      message: "Error updating payment details",
       error: error.message,
     });
   }

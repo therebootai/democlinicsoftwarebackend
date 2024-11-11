@@ -29,6 +29,9 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  doctorDegree: {
+    type: String,
+  },
 });
 
 // Pre-save middleware to hash password

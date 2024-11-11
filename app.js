@@ -21,6 +21,15 @@ if (!fs.existsSync(tempDir)) {
 }
 
 const addPaymentRoutes = require("./routes/addpaymentsRoutes");
+const oralFindingRoutes = require("./routes/oralFindingRoutes");
+const dentalProcedureRoutes = require("./routes/dentalProcedureRoutes");
+const patientMedicalHistoryRoutes = require("./routes/patientMedicalHistoryRoutes");
+const chiefComplainRoutes = require("./routes/chiefComplainRoutes");
+const onExaminationRoutes = require("./routes/onExaminationRoutes");
+const investigationRoutes = require("./routes/investigationRoutes");
+const radioagraphyRoutes = require("./routes/radioagraphyRoutes");
+const advicesRoutes = require("./routes/advicesRoutes");
+const medicationRoutes = require("./routes/medicationRoutes");
 
 app.use(cors());
 app.use(fileUpload({ useTempFiles: true, tempFileDir: "/temp/" }));
@@ -35,6 +44,16 @@ app.use("/api/addpayment", addPaymentRoutes);
 app.use("/api/form", formRoutes);
 
 app.use("/api/direction", directionRoutes);
+app.use("/api/oralfinding", oralFindingRoutes);
+
+app.use("/api/dentalprocedure", dentalProcedureRoutes);
+app.use("/api/patientmedicalhistory", patientMedicalHistoryRoutes);
+app.use("/api/chiefcomplain", chiefComplainRoutes);
+app.use("/api/onexamination", onExaminationRoutes);
+app.use("/api/investigation", investigationRoutes);
+app.use("/api/radiography", radioagraphyRoutes);
+app.use("/api/advices", advicesRoutes);
+app.use("/api/medications", medicationRoutes);
 
 app.get("/api/", async (req, res) => {
   return res.status(200).send("Hello World! from Clinic Management Backend");

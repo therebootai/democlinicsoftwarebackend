@@ -1,11 +1,11 @@
 const jwt = require("jsonwebtoken");
 
-exports.generateToken = (obj) => {
+exports.generateToken = (payload) => {
   try {
-    const token = jwt.sign(obj, process.env.SECRET_KEY, { expiresIn: "30d" });
-    return token;
+    if (!process.env.SECRET_KEY) throw new Error("SECRET_KEY is missing");
+    return jwt.sign(payload, process.env.SECRET_KEY, { expiresIn: "30d" });
   } catch (err) {
-    console.error("Invalid or expired token:", err.message);
+    console.error("Token generation error:", err.message);
     return null;
   }
 };

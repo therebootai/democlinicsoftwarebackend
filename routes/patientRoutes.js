@@ -6,14 +6,15 @@ const router = express.Router();
 
 router.post("/create", patientController.createPatients);
 router.get("/get", patientController.getPatients);
+router.get("/get/:patientId", patientController.getPatientByPatientId);
 router.put("/update/:patientId", patientController.updatePatients);
 router.put(
   "/update/prescriptions/:patientId",
   patientController.updatePatientWithPrescription
 );
 router.put(
-  "/update/prescriptions/:patientId/:prescriptionId/:subdocument",
-  patientController.addSubdocumentEntry
+  "/update/prescriptions/:patientId/:prescriptionId",
+  patientController.patientPrescriptionUpdate
 );
 router.put(
   "/update/prescriptions/:patientId/:prescriptionId/:subdocument/:customId",
@@ -26,6 +27,12 @@ router.put(
 router.put(
   "/update/patient/:patientId/document/:documentId",
   patientController.updatePatientDocument
+);
+
+router.put("/add/payment/:patientId", patientController.addPaymentDetails);
+router.put(
+  "/update/payment/:patientId/:paymentId",
+  patientController.updatePaymentDetails
 );
 
 router.delete(
