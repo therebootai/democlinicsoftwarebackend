@@ -537,83 +537,6 @@ exports.updatePatientWithPrescription = async (req, res) => {
   }
 };
 
-// edit under prescription like find medical and update only medicalHistoryName
-exports.updatePatientSubdocumentEntry = async (req, res) => {
-  try {
-    const { patientId, prescriptionId, subdocument, customId } = req.params;
-    const updateData = req.body;
-
-    if (!patientId || !prescriptionId || !subdocument || !customId) {
-      return res.status(400).json({
-        message:
-          "Patient ID, Prescription ID, Subdocument type, and Custom ID are required",
-      });
-    }
-
-    const customIdFieldMap = {
-      medications: "medicationId",
-      vitals: "vitalsId",
-      oralFinding: "oralFindingId",
-      dentalProcedure: "dentalProcedureId",
-      medicalHistory: "medicalHistoryId",
-      symptoms: "symptomId",
-      diagnosis: "diagnosisId",
-      referDoctor: "referDoctorId",
-    };
-
-    const customIdField = customIdFieldMap[subdocument];
-    if (!customIdField) {
-      return res.status(400).json({
-        message: "Invalid subdocument type",
-      });
-    }
-
-    const patient = await Patients.findOne({ patientId }).populate(
-      "prescriptions"
-    );
-    if (!patient) {
-      return res.status(404).json({ message: "Patient not found" });
-    }
-
-    const prescription = patient.prescriptions.find(
-      (prescription) => prescription.prescriptionId === prescriptionId
-    );
-    if (!prescription) {
-      return res.status(404).json({ message: "Prescription not found" });
-    }
-
-    const subdocumentArray = prescription[subdocument];
-    const entry = subdocumentArray.find(
-      (item) => item[customIdField] === customId
-    );
-
-    if (!entry) {
-      return res
-        .status(404)
-        .json({ message: `${subdocument} entry not found` });
-    }
-
-    Object.assign(entry, updateData);
-
-    const cacheKeysToInvalidate = cache
-      .keys()
-      .filter((key) => key.includes("allPatients") || key.includes("page:"));
-    cacheKeysToInvalidate.forEach((key) => cache.del(key));
-
-    await prescription.save();
-
-    res.status(200).json({
-      message: `${subdocument} entry updated successfully`,
-      data: prescription,
-    });
-  } catch (error) {
-    console.error("Error updating subdocument entry:", error);
-    res.status(500).json({
-      message: "Error updating subdocument entry",
-      error: error.message,
-    });
-  }
-};
 // delete any of the array element like if oral finding have two array then if want then one is delete
 exports.deleteSubdocumentEntry = async (req, res) => {
   try {
@@ -980,7 +903,8 @@ exports.deletePatientDocument = async (req, res) => {
 exports.addPaymentDetails = async (req, res) => {
   try {
     const { patientId } = req.params;
-    const { paymentMethod, paymentDetails, totalCharges } = req.body;
+    const { paymentMethod, paymentDetails, totalCharges, totalPaid, anyDue } =
+      req.body;
 
     if (!patientId) {
       return res.status(400).json({ message: "Patient ID is required" });
@@ -1001,6 +925,8 @@ exports.addPaymentDetails = async (req, res) => {
       paymentId,
       paymentMethod,
       totalCharges,
+      totalPaid,
+      anyDue,
       paymentDetails: paymentDetails.map((detail) => ({
         iteamName: detail.iteamName,
         iteamCharges: detail.iteamCharges,
@@ -1039,7 +965,7 @@ exports.addPaymentDetails = async (req, res) => {
 exports.updatePaymentDetails = async (req, res) => {
   try {
     const { patientId, paymentId } = req.params;
-    const { paymentDetails, totalCharges } = req.body;
+    const { paymentDetails, totalCharges, totalPaid } = req.body;
 
     // Ensure patientId and paymentId are provided
     if (!patientId || !paymentId) {
@@ -1048,6 +974,12 @@ exports.updatePaymentDetails = async (req, res) => {
         .json({ message: "Patient ID and Payment ID are required" });
     }
 
+    // Calculate `anyDue` based on provided `totalPaid` or default to `totalCharges` if no payment made
+    const calculatedTotalPaid = totalPaid
+      ? Number(totalPaid)
+      : Number(totalCharges);
+    const anyDue = Number(totalCharges) - calculatedTotalPaid;
+
     // Find and update the payment record with matching `paymentId` in `paymentDetails`
     const updatedPatient = await Patients.findOneAndUpdate(
       { patientId, "paymentDetails.paymentId": paymentId },
@@ -1055,6 +987,8 @@ exports.updatePaymentDetails = async (req, res) => {
         $set: {
           "paymentDetails.$.paymentDetails": paymentDetails,
           "paymentDetails.$.totalCharges": totalCharges,
+          "paymentDetails.$.totalPaid": calculatedTotalPaid.toString(),
+          "paymentDetails.$.anyDue": anyDue.toString(),
         },
       },
       { new: true }

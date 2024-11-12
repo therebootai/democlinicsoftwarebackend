@@ -19,12 +19,19 @@ const paymentDetailsSchema = new Schema(
     timestamps: true,
   }
 );
-const paymentSchema = new Schema({
-  paymentId: { type: String },
-  paymentDetails: [paymentDetailsSchema],
-  paymentMethod: { type: String },
-  totalCharges: { type: String },
-});
+const paymentSchema = new Schema(
+  {
+    paymentId: { type: String },
+    paymentDetails: [paymentDetailsSchema],
+    paymentMethod: { type: String },
+    totalCharges: { type: String },
+    totalPaid: { type: String },
+    anyDue: { type: String },
+  },
+  {
+    timestamps: true,
+  }
+);
 
 const medicalHistorySchema = new Schema({
   medicalHistoryName: { type: String },
@@ -72,19 +79,6 @@ const patientSchema = new Schema(
     timestamps: true,
   }
 );
-
-paymentDetailsSchema.pre("save", function (next) {
-  const paymentCreateDate = this.paymentCreateDate;
-  const formattedDate = paymentCreateDate.toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  this.paymentCreateDate = formattedDate;
-  next();
-});
 
 patientSchema.index({ appointmentdate: -1, patientId: 1 });
 

@@ -35,6 +35,19 @@ exports.addForm = async (req, res) => {
   }
 };
 
+exports.getForms = async (req, res) => {
+  try {
+    const result = await Form.find();
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Error fetching Form:", error);
+    res.status(500).json({
+      message: "Error fetching Form",
+      error: error.message,
+    });
+  }
+};
+
 exports.deleteForm = async (req, res) => {
   try {
     const requestedForm = await Form.findById(req.params.id);

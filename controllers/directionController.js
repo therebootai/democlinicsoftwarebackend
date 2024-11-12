@@ -40,12 +40,25 @@ exports.addDirection = async (req, res) => {
   }
 };
 
+exports.getDirection = async (req, res) => {
+  try {
+    const result = await Direction.find();
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Error fetching Direction:", error);
+    res.status(500).json({
+      message: "Error fetching Direction",
+      error: error.message,
+    });
+  }
+};
+
 exports.deleteDirection = async (req, res) => {
   try {
     const requestedDirection = await Direction.findById(req.params.id);
 
     const deleteResult = await deleteFile(requestedDirection.publicId);
-    
+
     if (deleteResult.result != "ok") {
       return res
         .status(400)

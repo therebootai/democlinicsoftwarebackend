@@ -16,10 +16,7 @@ router.put(
   "/update/prescriptions/:patientId/:prescriptionId",
   patientController.patientPrescriptionUpdate
 );
-router.put(
-  "/update/prescriptions/:patientId/:prescriptionId/:subdocument/:customId",
-  patientController.updatePatientSubdocumentEntry
-);
+
 router.put(
   "/add/patient/:patientId/document",
   patientController.addPatientDocument
