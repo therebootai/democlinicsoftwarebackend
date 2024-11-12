@@ -30,6 +30,7 @@ const investigationRoutes = require("./routes/investigationRoutes");
 const radioagraphyRoutes = require("./routes/radioagraphyRoutes");
 const advicesRoutes = require("./routes/advicesRoutes");
 const medicationRoutes = require("./routes/medicationRoutes");
+const clinicRoutes = require("./routes/clinicRouter");
 
 app.use(cors());
 app.use(fileUpload({ useTempFiles: true, tempFileDir: "/temp/" }));
@@ -54,6 +55,7 @@ app.use("/api/investigation", investigationRoutes);
 app.use("/api/radiography", radioagraphyRoutes);
 app.use("/api/advices", advicesRoutes);
 app.use("/api/medications", medicationRoutes);
+app.use("/api/clinic", clinicRoutes);
 
 app.get("/api/", async (req, res) => {
   return res.status(200).send("Hello World! from Clinic Management Backend");

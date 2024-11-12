@@ -5,6 +5,7 @@ const bcrypt = require("bcryptjs");
 
 const generateCustomId = require("../middlewares/generateCustomId");
 const { generateToken } = require("../middlewares/jsontoken");
+const Clinic = require("../models/Clinic");
 
 dotenv.config();
 // Get all users
@@ -25,8 +26,16 @@ exports.getAllUsers = async (req, res) => {
 
 // Create a new user
 exports.createUser = async (req, res) => {
-  const { name, email, phone, password, role, designation, doctorDegree } =
-    req.body;
+  const {
+    name,
+    email,
+    phone,
+    password,
+    role,
+    designation,
+    doctorDegree,
+    clinicId,
+  } = req.body;
 
   const idPrefix =
     designation === "Doctor"
@@ -40,11 +49,25 @@ exports.createUser = async (req, res) => {
     return res.status(400).json({ message: "All fields are required" });
   }
 
+  if (role != "super_admin" && !clinicId) {
+    return res
+      .status(400)
+      .json({ message: `ClinicId is required for role ${role}` });
+  }
+
   try {
     // Check if the user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: "Email already in use" });
+    }
+    let clinic;
+    if (!clinicId) {
+      clinic = await Clinic.findById(clinicId);
+    }
+
+    if (clinicId && !clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
     }
 
     const userId = await generateCustomId(User, "userId", idPrefix);
@@ -59,6 +82,7 @@ exports.createUser = async (req, res) => {
       role,
       designation,
       doctorDegree,
+      clinicId,
     });
     const savedUser = await newUser.save();
 
@@ -67,6 +91,7 @@ exports.createUser = async (req, res) => {
       userId: savedUser.userId,
       email: savedUser.email,
       role: savedUser.role,
+      clinic,
     });
 
     // Respond with the created user and token
@@ -77,16 +102,23 @@ exports.createUser = async (req, res) => {
 };
 
 exports.loginUser = async (req, res) => {
-  const { emailOrPhone, password, role } = req.body;
+  const { emailOrPhone, password, role, clinicId } = req.body;
 
   if (!emailOrPhone || !password || !role) {
     return res.status(400).json({ message: "All fields are required" });
+  }
+  if (role != "super_admin" && !clinicId) {
+    return res
+      .status(400)
+      .json({ message: `ClinicId is required for role ${role}` });
   }
 
   try {
     const user = await User.findOne({
       $or: [{ email: emailOrPhone }, { phone: emailOrPhone }],
-    });
+    })
+      .populate("clinicId")
+      .exec();
 
     if (!user) {
       return res.status(400).json({ message: "Invalid credentials" });

@@ -32,6 +32,10 @@ const userSchema = new mongoose.Schema({
   doctorDegree: {
     type: String,
   },
+  clinicId: {
+    type: [mongoose.Schema.Types.ObjectId],
+    ref: "Clinics",
+  },
 });
 
 // Pre-save middleware to hash password
