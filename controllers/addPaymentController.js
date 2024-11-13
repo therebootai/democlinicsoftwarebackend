@@ -39,6 +39,10 @@ exports.getPayments = async (req, res) => {
 
     const match = {};
 
+    if (req.query.clinicId) {
+      match.clinicId = req.query.clinicId;
+    }
+
     const totalDocuments = await addPayments.countDocuments(match);
     const payments = await addPayments
       .find(match)

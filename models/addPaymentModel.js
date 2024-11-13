@@ -6,6 +6,11 @@ const addPaymentSchema = new Schema({
   iteamName: { type: String, required: true },
   iteamCharges: { type: String },
   paymentCreateDate: { type: Date, default: Date.now },
+  clinicId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Clinics",
+    required: true,
+  },
 });
 
 addPaymentSchema.pre("save", function (next) {

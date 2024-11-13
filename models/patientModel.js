@@ -74,6 +74,11 @@ const patientSchema = new Schema(
     bloodSugarRandom: { type: String },
     bloodSugarFasting: { type: String },
     bloodSugarPP: { type: String },
+    clinicId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Clinics",
+      required: true,
+    },
   },
   {
     timestamps: true,
