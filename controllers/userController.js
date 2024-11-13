@@ -4,7 +4,7 @@ const dotenv = require("dotenv");
 const bcrypt = require("bcryptjs");
 
 const generateCustomId = require("../middlewares/generateCustomId");
-const { generateToken } = require("../middlewares/jsontoken");
+const { generateToken, verifyToken } = require("../middlewares/jsontoken");
 const Clinic = require("../models/Clinic");
 
 dotenv.config();
@@ -102,15 +102,10 @@ exports.createUser = async (req, res) => {
 };
 
 exports.loginUser = async (req, res) => {
-  const { emailOrPhone, password, role, clinicId } = req.body;
+  const { emailOrPhone, password, role } = req.body;
 
   if (!emailOrPhone || !password || !role) {
     return res.status(400).json({ message: "All fields are required" });
-  }
-  if (role != "super_admin" && !clinicId) {
-    return res
-      .status(400)
-      .json({ message: `ClinicId is required for role ${role}` });
   }
 
   try {
@@ -129,7 +124,7 @@ exports.loginUser = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    const token = generateToken(user);
+    const token = generateToken({ ...user });
 
     res.status(200).json({ user, token, name: user.name });
   } catch (error) {
@@ -153,6 +148,21 @@ exports.deleteUser = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "An error occurred while deleting the user",
+      error: error.message,
+    });
+  }
+};
+
+exports.getUserByToken = async (req, res) => {
+  try {
+    const token = req.headers.authorization.split(" ")[1];
+    const decodedToken = verifyToken(token);
+    if (!decodedToken) {
+      return res.status(404).json({ message: "Invalid token" });
+    }
+    res.status(200).json(decodedToken._doc);
+  } catch (error) {
+    res.status(500).json({
       error: error.message,
     });
   }

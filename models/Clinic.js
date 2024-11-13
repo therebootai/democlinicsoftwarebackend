@@ -8,6 +8,7 @@ const clinicScheama = new mongoose.Schema({
   clinic_name: {
     type: String,
     required: true,
+    unique: true,
   },
   clinic_address: {
     type: String,
