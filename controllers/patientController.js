@@ -231,7 +231,8 @@ exports.getPatientByPatientId = async (req, res) => {
 exports.updatePatients = async (req, res) => {
   try {
     const { patientId } = req.params;
-    const updateData = req.body;
+    const { checkedMedicalHistory = [], uncheckedMedicalHistoryNames = [] } =
+      req.body;
 
     if (!patientId) {
       return res.status(400).json({ message: "Patient ID is required" });
@@ -243,36 +244,50 @@ exports.updatePatients = async (req, res) => {
       return res.status(404).json({ message: "Patient not found" });
     }
 
-    // Update fields dynamically except `paymentDetails` and `patientDocuments`
-    for (const key in updateData) {
-      if (key === "medicalHistory" && Array.isArray(updateData[key])) {
-        updateData[key].forEach((newEntry) => {
-          const existingEntry = patient.medicalHistory.find(
-            (entry) => entry.medicalHistoryName === newEntry.medicalHistoryName
-          );
+    // Remove unchecked items from existing medicalHistory
+    patient.medicalHistory = patient.medicalHistory.filter((entry) => {
+      const shouldKeep = !uncheckedMedicalHistoryNames.includes(
+        entry.medicalHistoryName
+      );
 
-          if (existingEntry) {
-            // Update existing entry in medical history
-            existingEntry.medicalHistoryMedicine = [
-              ...new Set([
-                ...existingEntry.medicalHistoryMedicine,
-                ...newEntry.medicalHistoryMedicine,
-              ]),
-            ]; // Use Set to avoid duplicate medicines
-            existingEntry.duration =
-              newEntry.duration || existingEntry.duration;
-          } else {
-            // Add new entry if it doesn't exist
-            patient.medicalHistory.push(newEntry);
-          }
-        });
-      } else if (key !== "paymentDetails" && key !== "patientDocuments") {
-        // Update simple fields directly, excluding `paymentDetails` and `patientDocuments`
-        patient[key] = updateData[key];
+      return shouldKeep;
+    });
+
+    // Update or add checked items in medical history
+    checkedMedicalHistory.forEach((newEntry) => {
+      const existingEntry = patient.medicalHistory.find(
+        (entry) => entry.medicalHistoryName === newEntry.medicalHistoryName
+      );
+
+      if (existingEntry) {
+        // Update existing entry in medical history
+        existingEntry.medicalHistoryMedicine = [
+          ...new Set([
+            ...existingEntry.medicalHistoryMedicine,
+            ...newEntry.medicalHistoryMedicine,
+          ]),
+        ]; // Use Set to avoid duplicate medicines
+        existingEntry.duration = newEntry.duration || existingEntry.duration;
+      } else {
+        // Add new entry if it doesn't exist
+        patient.medicalHistory.push(newEntry);
+      }
+    });
+
+    // Update other fields dynamically, excluding `paymentDetails` and `patientDocuments`
+    for (const key in req.body) {
+      if (
+        key !== "medicalHistory" &&
+        key !== "checkedMedicalHistory" &&
+        key !== "uncheckedMedicalHistoryNames" &&
+        key !== "paymentDetails" &&
+        key !== "patientDocuments"
+      ) {
+        patient[key] = req.body[key];
       }
     }
 
-    // Cache invalidation (if necessary)
+    // Optional cache invalidation (if necessary)
     try {
       const cacheKeysToInvalidate = cache
         .keys()
@@ -287,6 +302,7 @@ exports.updatePatients = async (req, res) => {
     // Save the updated patient data
     await patient.save();
 
+    // Send success response
     res.status(200).json({
       message: "Patient's data updated successfully",
       data: patient,
