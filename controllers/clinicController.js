@@ -61,3 +61,35 @@ exports.deleteClinicById = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+exports.getDropdown = async (req, res) => {
+  try {
+    const searchQuery = req.query.query;
+
+    if (!searchQuery) {
+      return res.status(400).json({ message: "Query parameter is required" });
+    }
+
+    // Fuzzy regex matching for iteamName
+    const fuzzyRegex = new RegExp(searchQuery.split("").join(".*"), "i");
+
+    const items = await Clinic.aggregate([
+      {
+        $match: {
+          clinic_name: fuzzyRegex,
+        },
+      },
+      {
+        $limit: 30,
+      },
+    ]);
+
+    res.status(200).json(items);
+  } catch (error) {
+    console.error("Error searching items:", error);
+    res.status(500).json({
+      message: "Error searching items",
+      error: error.message,
+    });
+  }
+};

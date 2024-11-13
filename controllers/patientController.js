@@ -15,7 +15,12 @@ exports.createPatients = async (req, res) => {
       "patientId"
     );
 
-    const { prescriptions, medicalHistory = [], ...patientData } = req.body;
+    const {
+      prescriptions,
+      medicalHistory = [],
+      clinicId,
+      ...patientData
+    } = req.body;
 
     const prescriptionIds = [];
     if (prescriptions && prescriptions.length > 0) {
@@ -35,6 +40,7 @@ exports.createPatients = async (req, res) => {
     const newPatient = new Patients({
       ...patientData,
       patientId,
+      clinicId,
       prescriptions: prescriptionIds,
       medicalHistory: processedMedicalHistory,
     });
@@ -101,6 +107,10 @@ exports.getPatients = async (req, res) => {
       match.chooseDoctor = req.query.doctorId;
     }
 
+    if (req.query.clinicId) {
+      match.clinicId = req.query.clinicId;
+    }
+
     let cacheKey = `page:${page}-limit:${limit}`;
 
     if (req.query.startdate) {
@@ -116,6 +126,10 @@ exports.getPatients = async (req, res) => {
 
     if (req.query.doctorId) {
       cacheKey += `-doctorId:${req.query.doctorId}`;
+    }
+
+    if (req.query.clinicId) {
+      cacheKey += `-clinicId:${req.query.clinicId}`;
     }
 
     const cachedPatients = cache.get(cacheKey);
@@ -902,7 +916,7 @@ exports.deletePatientDocument = async (req, res) => {
 
 exports.addPaymentDetails = async (req, res) => {
   try {
-    const { patientId } = req.params;
+    const { patientId,clinicId } = req.params;
     const { paymentMethod, paymentDetails, totalCharges, totalPaid, anyDue } =
       req.body;
 
@@ -927,6 +941,7 @@ exports.addPaymentDetails = async (req, res) => {
       totalCharges,
       totalPaid,
       anyDue,
+      clinicId,
       paymentDetails: paymentDetails.map((detail) => ({
         iteamName: detail.iteamName,
         iteamCharges: detail.iteamCharges,

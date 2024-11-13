@@ -61,13 +61,15 @@ exports.createUser = async (req, res) => {
     if (existingUser) {
       return res.status(400).json({ message: "Email already in use" });
     }
-    let clinic;
-    if (!clinicId) {
-      clinic = await Clinic.findById(clinicId);
+    let clinics;
+    if (clinicId && Array.isArray(clinicId)) {
+      // Find all clinics with IDs in the clinicId array
+      clinics = await Clinic.find({ _id: { $in: clinicId } });
     }
 
-    if (clinicId && !clinic) {
-      return res.status(404).json({ message: "Clinic not found" });
+    // Check if any clinics were not found
+    if (clinicId && (!clinics || clinics.length !== clinicId.length)) {
+      return res.status(404).json({ message: "One or more clinics not found" });
     }
 
     const userId = await generateCustomId(User, "userId", idPrefix);
@@ -91,7 +93,7 @@ exports.createUser = async (req, res) => {
       userId: savedUser.userId,
       email: savedUser.email,
       role: savedUser.role,
-      clinic,
+      clinics,
     });
 
     // Respond with the created user and token

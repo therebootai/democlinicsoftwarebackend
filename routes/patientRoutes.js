@@ -26,7 +26,10 @@ router.put(
   patientController.updatePatientDocument
 );
 
-router.put("/add/payment/:patientId", patientController.addPaymentDetails);
+router.put(
+  "/add/payment/:patientId/:clinicId",
+  patientController.addPaymentDetails
+);
 router.put(
   "/update/payment/:patientId/:paymentId",
   patientController.updatePaymentDetails
