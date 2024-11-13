@@ -5,6 +5,9 @@ const userController = require("../controllers/userController");
 // Get all users
 router.get("/users", userController.getAllUsers);
 
+// Get user by token
+router.get("/", userController.getUserByToken);
+
 // Create a new user
 router.post("/users", userController.createUser);
 router.post("/login", userController.loginUser);

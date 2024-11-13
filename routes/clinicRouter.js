@@ -7,7 +7,7 @@ const {
 } = require("../controllers/clinicController");
 const router = express.Router();
 
-router.get("/ all", getAllClinics);
+router.get("/all", getAllClinics);
 
 router.post("/add", addNewClinic);
 
