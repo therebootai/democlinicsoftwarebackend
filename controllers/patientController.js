@@ -168,13 +168,21 @@ exports.getPatients = async (req, res) => {
         return patientObj;
       })
     );
-
+    const totalPrescriptions = patientsWithDoctorDetails.reduce(
+      (total, patient) => {
+        return (
+          total + (patient.prescriptions ? patient.prescriptions.length : 0)
+        );
+      },
+      0
+    );
     const totalPages = Math.ceil(totalDocuments / limit);
 
     const result = {
       page,
       totalPages,
       totalDocuments,
+      totalPrescriptions,
       data: patientsWithDoctorDetails,
     };
 
@@ -297,7 +305,14 @@ exports.updatePatients = async (req, res) => {
         key !== "paymentDetails" &&
         key !== "patientDocuments"
       ) {
-        patient[key] = req.body[key];
+        if (
+          typeof req.body[key] === "object" &&
+          !Array.isArray(req.body[key])
+        ) {
+          patient[key] = { ...patient[key], ...req.body[key] }; // Merge objects
+        } else {
+          patient[key] = req.body[key]; // Direct update for primitive values
+        }
       }
     }
 
@@ -932,7 +947,7 @@ exports.deletePatientDocument = async (req, res) => {
 
 exports.addPaymentDetails = async (req, res) => {
   try {
-    const { patientId,clinicId } = req.params;
+    const { patientId, clinicId } = req.params;
     const { paymentMethod, paymentDetails, totalCharges, totalPaid, anyDue } =
       req.body;
 
