@@ -9,6 +9,6 @@ const router = express.Router();
 router.post("/add", addDirection);
 router.get("/get", getDirection);
 
-router.delete("/:id/delete", deleteDirection);
+router.delete("/delete/:id", deleteDirection);
 
 module.exports = router;
