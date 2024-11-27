@@ -1210,16 +1210,6 @@ exports.updateTCCard = async (req, res) => {
     let uploadedFile = null;
 
     if (tccardPdf && tccardPdf.tempFilePath) {
-      if (tcCard.tccardPdf && tcCard.tccardPdf.public_id) {
-        const deleteResult = await deleteFile(tcCard.tccardPdf.public_id);
-        if (deleteResult.result !== "ok") {
-          return res.status(500).json({
-            message: "Error deleting previous PDF",
-            error: deleteResult.error || "Unknown error",
-          });
-        }
-      }
-
       uploadedFile = await uploadFile(
         tccardPdf.tempFilePath,
         tccardPdf.mimetype
