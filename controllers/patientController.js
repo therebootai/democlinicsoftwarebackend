@@ -6,6 +6,7 @@ const { uploadFile, deleteFile } = require("../middlewares/cloudinary");
 const generateNestedCustomId = require("../middlewares/ganerateNestedCustomId");
 const cache = new NodeCache({ stdTTL: 300 });
 const User = require("../models/User");
+const fs = require("fs");
 // create patient
 exports.createPatients = async (req, res) => {
   try {
@@ -200,13 +201,19 @@ exports.getPatients = async (req, res) => {
 
 exports.getPatientByPatientId = async (req, res) => {
   const { patientId } = req.params;
-  const { prescriptionId } = req.query;
+  const { prescriptionId, tccardId } = req.query;
 
   try {
     // Fetch patient data and populate the prescriptions field
-    const patient = await Patients.findOne({ patientId }).populate(
-      "prescriptions"
-    );
+    const patient = await Patients.findOne({ patientId })
+      .populate({
+        path: "prescriptions",
+        options: { sort: { createdAt: -1 } }, // Sort prescriptions by createdAt in descending order
+      })
+      .populate({
+        path: "patientTcCard",
+        options: { sort: { createdAt: -1 } }, // Sort patientTcCard by createdAt in descending order
+      });
 
     if (!patient) {
       return res.status(404).json({ message: "Patient not found" });
@@ -229,6 +236,17 @@ exports.getPatientByPatientId = async (req, res) => {
           designation: doctor.designation,
           doctorDegree: doctor.doctorDegree,
         };
+      }
+    }
+
+    if (tccardId) {
+      filteredPatient.patientTcCard = filteredPatient.patientTcCard.filter(
+        (tcCard) => tcCard.tcCardId === tccardId
+      );
+
+      // If no matching TC Card is found, return a 404 error
+      if (filteredPatient.patientTcCard.length === 0) {
+        return res.status(404).json({ message: "TC Card not found" });
       }
     }
 
@@ -348,10 +366,9 @@ exports.updatePatients = async (req, res) => {
 // add more array item , under prescription more item are create like if oralfinding have one array if want create two array then create once function
 exports.patientPrescriptionUpdate = async (req, res) => {
   try {
-    const { patientId, prescriptionId } = req.params; // Get patientId and prescriptionId from request params
-    const updatedData = req.body; // Get updated prescription data from request body
+    const { patientId, prescriptionId } = req.params;
+    const updatedData = req.body;
 
-    // Validate patient existence
     const patient = await Patients.findOne({ patientId }).populate(
       "prescriptions"
     );
@@ -360,7 +377,6 @@ exports.patientPrescriptionUpdate = async (req, res) => {
       return res.status(404).json({ message: "Patient not found" });
     }
 
-    // Validate if prescription belongs to this patient
     const prescription = patient.prescriptions.find(
       (prescription) => prescription._id.toString() === prescriptionId
     );
@@ -448,6 +464,9 @@ exports.patientPrescriptionUpdate = async (req, res) => {
             )
         ),
       ];
+    }
+    if (updatedData.followupdate) {
+      prescription.followupdate = updatedData.followupdate;
     }
 
     // Save the updated prescription
@@ -541,6 +560,7 @@ exports.updatePatientWithPrescription = async (req, res) => {
               referDoctor: item.referDoctor || "",
             }))
           : [],
+        followupdate: prescriptionData.followupdate || undefined,
       };
 
       try {
@@ -1056,5 +1076,208 @@ exports.updatePaymentDetails = async (req, res) => {
       message: "Error updating payment details",
       error: error.message,
     });
+  }
+};
+
+exports.addnewTCCard = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { tcCardDetails, tccardPdf } = req.body;
+
+    if (!patientId) {
+      return res.status(400).json({ message: "Patient ID is required" });
+    }
+
+    if (
+      !tcCardDetails ||
+      !Array.isArray(tcCardDetails) ||
+      tcCardDetails.length === 0
+    ) {
+      return res
+        .status(400)
+        .json({ message: "TC Card details are missing or invalid" });
+    }
+
+    let uploadedFile = null;
+    if (tccardPdf && tccardPdf.tempFilePath) {
+      uploadedFile = await uploadFile(
+        tccardPdf.tempFilePath,
+        tccardPdf.fileType
+      );
+      if (uploadedFile.error) {
+        return res.status(500).json({
+          message: "Error uploading file",
+          error: uploadedFile.error,
+        });
+      }
+      // After the file is uploaded, delete the temporary file
+      fs.unlink(tccardPdf.tempFilePath, (err) => {
+        if (err) {
+          console.error("Error deleting the temp file:", err);
+        } else {
+          console.log("Temporary file deleted successfully.");
+        }
+      });
+    }
+
+    // Generate a unique TC Card ID
+    const tcCardId = await generateNestedCustomId(
+      Patients,
+      "patientTcCard",
+      "tcCardId"
+    );
+
+    // Structure the TC Card data
+    const newTCCard = {
+      tcCardId,
+      patientTcCardDetails: tcCardDetails.map((detail) => ({
+        typeOfWork: detail.typeOfWork,
+        tc: detail.tc,
+        stepDone: detail.stepDone,
+        nextAppointment: detail.nextAppointment,
+        nextStep: detail.nextStep,
+        payment: detail.payment,
+        due: detail.due,
+        comment: detail.comment,
+      })),
+      tccardPdf: uploadedFile
+        ? {
+            secure_url: uploadedFile.secure_url,
+            public_id: uploadedFile.public_id,
+          }
+        : {
+            secure_url: tccardPdf?.secure_url || null,
+            public_id: tccardPdf?.public_id || null,
+          },
+    };
+
+    // Push the new TC Card into patientTcCard array
+    const updatedPatient = await Patients.findOneAndUpdate(
+      { patientId },
+      { $push: { patientTcCard: newTCCard } },
+      { new: true }
+    );
+
+    if (!updatedPatient) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    res.status(200).json({
+      message: "TC Card added successfully",
+      tcCardId,
+      data: updatedPatient.patientTcCard,
+    });
+  } catch (error) {
+    console.error("Error adding TC Card:", error);
+    res
+      .status(500)
+      .json({ message: "Error adding TC Card", error: error.message });
+  }
+};
+
+exports.updateTCCard = async (req, res) => {
+  try {
+    const { patientId, tcCardId } = req.params;
+    const { tcCardDetails } = req.body;
+    const tccardPdf = req.files?.tccardPdf;
+
+    if (!patientId || !tcCardId) {
+      return res
+        .status(400)
+        .json({ message: "Patient ID and TC Card ID are required" });
+    }
+
+    const patient = await Patients.findOne({ patientId });
+
+    if (!patient) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    const tcCard = patient.patientTcCard.find(
+      (card) => card.tcCardId === tcCardId
+    );
+
+    if (!tcCard) {
+      return res.status(404).json({ message: "TC Card not found" });
+    }
+
+    if (tccardPdf.mimetype !== "application/pdf") {
+      return res
+        .status(400)
+        .json({ message: "Uploaded file is not a valid PDF" });
+    }
+
+    let uploadedFile = null;
+
+    if (tccardPdf && tccardPdf.tempFilePath) {
+      if (tcCard.tccardPdf && tcCard.tccardPdf.public_id) {
+        const deleteResult = await deleteFile(tcCard.tccardPdf.public_id);
+        if (deleteResult.result !== "ok") {
+          return res.status(500).json({
+            message: "Error deleting previous PDF",
+            error: deleteResult.error || "Unknown error",
+          });
+        }
+      }
+
+      uploadedFile = await uploadFile(
+        tccardPdf.tempFilePath,
+        tccardPdf.mimetype
+      );
+      if (uploadedFile.error) {
+        return res.status(500).json({
+          message: "Error uploading new PDF file",
+          error: uploadedFile.error,
+        });
+      }
+
+      fs.unlink(tccardPdf.tempFilePath, (err) => {
+        if (err) {
+          console.error("Error deleting the temp file:", err);
+        }
+      });
+
+      tcCard.tccardPdf = {
+        secure_url: uploadedFile.secure_url,
+        public_id: uploadedFile.public_id,
+      };
+    }
+
+    if (tcCardDetails && Array.isArray(tcCardDetails)) {
+      tcCard.patientTcCardDetails = tcCardDetails.map((detail) => ({
+        typeOfWork: detail.typeOfWork,
+        tc: detail.tc,
+        stepDone: detail.stepDone,
+        nextAppointment: detail.nextAppointment,
+        nextStep: detail.nextStep,
+        payment: detail.payment,
+        due: detail.due,
+        comment: detail.comment,
+      }));
+    }
+
+    const updatedPatient = await Patients.findOneAndUpdate(
+      { patientId },
+      { $set: { patientTcCard: patient.patientTcCard } },
+      { new: true }
+    );
+
+    if (!updatedPatient) {
+      return res.status(500).json({ message: "Error updating TC Card" });
+    }
+
+    const updatedTcCard = updatedPatient.patientTcCard.find(
+      (card) => card.tcCardId === tcCardId
+    );
+
+    res.status(200).json({
+      message: "TC Card updated successfully",
+      data: updatedTcCard,
+    });
+  } catch (error) {
+    console.error("Error updating TC Card:", error);
+    res
+      .status(500)
+      .json({ message: "Error updating TC Card", error: error.message });
   }
 };

@@ -30,9 +30,15 @@ router.put(
   "/add/payment/:patientId/:clinicId",
   patientController.addPaymentDetails
 );
+
 router.put(
   "/update/payment/:patientId/:paymentId",
   patientController.updatePaymentDetails
+);
+router.put("/add/tccard/:patientId", patientController.addnewTCCard);
+router.put(
+  "/update/tccard/:patientId/:tcCardId",
+  patientController.updateTCCard
 );
 
 router.delete(
