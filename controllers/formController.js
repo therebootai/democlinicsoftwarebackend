@@ -59,6 +59,14 @@ exports.deleteForm = async (req, res) => {
         .json({ message: "Direction not found", success: false });
     }
 
+    const deleteResult = await deleteFile(requestedForms.publicId);
+    if (deleteResult.result !== "ok") {
+      return res.status(500).json({
+        message: "Error deleting the file from Cloudinary",
+        error: deleteResult,
+      });
+    }
+
     await Form.findOneAndDelete({ formId: req.params.id });
 
     return res

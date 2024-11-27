@@ -53,7 +53,6 @@ exports.getDirection = async (req, res) => {
 
 exports.deleteDirection = async (req, res) => {
   try {
-    // Find the direction by directionId
     const requestedDirection = await Direction.findOne({
       directionId: req.params.id,
     });
@@ -64,7 +63,14 @@ exports.deleteDirection = async (req, res) => {
         .json({ message: "Direction not found", success: false });
     }
 
-    // Delete the direction from the database using directionId
+    const deleteResult = await deleteFile(requestedDirection.publicId);
+    if (deleteResult.result !== "ok") {
+      return res.status(500).json({
+        message: "Error deleting the file from Cloudinary",
+        error: deleteResult,
+      });
+    }
+
     await Direction.findOneAndDelete({ directionId: req.params.id });
 
     return res

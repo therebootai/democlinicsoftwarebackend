@@ -33,7 +33,16 @@ exports.uploadFile = async (tempFilePath, fileType) => {
 
 exports.deleteFile = async (publicId) => {
   try {
-    const result = await cloudinary.uploader.destroy(publicId);
+    const fileType = publicId.endsWith(".pdf") ? "application/pdf" : "";
+
+    if (fileType === "application/pdf") {
+      resourceType = "raw";
+    } else {
+      resourceType = "image";
+    }
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: resourceType,
+    });
     return result;
   } catch (error) {
     console.error("Error uploading file:", error);
