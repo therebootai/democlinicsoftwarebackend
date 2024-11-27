@@ -42,7 +42,7 @@ exports.addDirection = async (req, res) => {
 
 exports.getDirection = async (req, res) => {
   try {
-    const result = await Direction.find();
+    const result = await Direction.find().sort({ createdAt: -1 });
     res.status(200).json(result);
   } catch (error) {
     console.error("Error fetching Direction:", error);

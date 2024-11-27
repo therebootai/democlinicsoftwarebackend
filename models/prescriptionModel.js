@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
+const Patient = require("./patientModel");
 
 // Define individual schemas without IDs
 const chiefComplainSchema = new Schema({
@@ -52,6 +53,7 @@ const prescriptionSchema = new Schema(
     advices: [adviceSchema],
     medications: [medicationsSchema],
     referDoctor: [referDoctorSchema],
+    followupdate: { type: Date },
   },
   {
     timestamps: true,

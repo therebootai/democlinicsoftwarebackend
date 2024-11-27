@@ -37,7 +37,8 @@ exports.addForm = async (req, res) => {
 
 exports.getForms = async (req, res) => {
   try {
-    const result = await Form.find();
+    // Sorting by creation time in descending order
+    const result = await Form.find().sort({ createdAt: -1 });
     res.status(200).json(result);
   } catch (error) {
     console.error("Error fetching Form:", error);

@@ -12,7 +12,7 @@ exports.uploadFile = async (tempFilePath, fileType) => {
     let folderName = "images";
     let format = "jpg";
     let resourceType = "image";
-    if (fileType == "application/pdf") {
+    if (fileType === "application/pdf") {
       folderName = "pdf";
       format = "pdf";
       resourceType = "raw";
@@ -21,7 +21,7 @@ exports.uploadFile = async (tempFilePath, fileType) => {
     const result = await cloudinary.uploader.upload(tempFilePath, {
       folder: "dentity-dental/" + folderName,
       resource_type: resourceType,
-      format,
+      format: format,
     });
 
     return result;

@@ -39,6 +39,35 @@ const medicalHistorySchema = new Schema({
   medicalHistoryMedicine: [String],
 });
 
+const patientTcCardDetailsSchema = new Schema({
+  typeOfWork: { type: String },
+  tc: { type: String },
+  stepDone: { type: String },
+  nextAppointment: { type: String },
+  nextStep: { type: String },
+  payment: { type: String },
+  due: { type: String },
+  comment: { type: String },
+});
+
+const patientTcCardSchema = new Schema(
+  {
+    tcCardId: { type: String },
+    patientTcCardDetails: [patientTcCardDetailsSchema],
+    tccardPdf: {
+      secure_url: {
+        type: String,
+      },
+      public_id: {
+        type: String,
+      },
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
 const patientSchema = new Schema(
   {
     patientId: {
@@ -79,12 +108,14 @@ const patientSchema = new Schema(
       ref: "Clinics",
       required: true,
     },
+    patientTcCard: [patientTcCardSchema],
+    latestFollowupdate: { type: String },
   },
   {
     timestamps: true,
   }
 );
 
-patientSchema.index({ appointmentdate: -1, patientId: 1 });
+patientSchema.index({ createdAt: -1, patientId: 1 });
 
 module.exports = mongoose.model("Patients", patientSchema);
