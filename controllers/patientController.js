@@ -7,6 +7,57 @@ const generateNestedCustomId = require("../middlewares/ganerateNestedCustomId");
 const cache = new NodeCache({ stdTTL: 300 });
 const User = require("../models/User");
 const fs = require("fs");
+
+const generateNestedDocumentId = async (Model, patientId) => {
+  try {
+    // Find the patient by patientId and get the patientDocuments array
+    const patient = await Model.findOne(
+      { patientId },
+      { patientDocuments: 1, _id: 0 }
+    );
+
+    if (!patient || !patient.patientDocuments) {
+      throw new Error("Patient or patient documents not found.");
+    }
+
+    // Extract existing document IDs from the patientDocuments array
+    const ids = patient.patientDocuments
+      .map((doc) => {
+        const customId = doc.documentId;
+        if (customId && customId.startsWith("DOC")) {
+          // Extract the numeric part from the documentId (e.g., DOC0001 -> 1)
+          const numericId = parseInt(customId.replace("DOC", ""), 10);
+          if (!isNaN(numericId)) {
+            return numericId;
+          }
+        }
+        return null;
+      })
+      .filter((id) => id !== null); // Remove any null values
+
+    // Sort the IDs to find the next available ID
+    ids.sort((a, b) => a - b);
+
+    // Generate the next available document ID
+    let newId = 1;
+    if (ids.length > 0) {
+      // Increment the largest existing ID
+      for (let i = 0; i < ids.length; i++) {
+        if (newId < ids[i]) {
+          break;
+        }
+        newId++;
+      }
+    }
+
+    // Return the new document ID with the "DOC" prefix
+    return `DOC${String(newId).padStart(4, "0")}`;
+  } catch (error) {
+    console.error("Error generating document ID:", error);
+    throw new Error("Error generating document ID");
+  }
+};
+
 // create patient
 exports.createPatients = async (req, res) => {
   try {
@@ -791,11 +842,7 @@ exports.addPatientDocument = async (req, res) => {
       return res.status(400).send("Title is required.");
     }
 
-    const documentId = await generateCustomId(
-      Patients,
-      "patientDocuments.documentId",
-      "DOC"
-    );
+    const documentId = await generateNestedDocumentId(Patients, patientId);
     let uploadedFile = req.files.file;
     const uploadResult = await uploadFile(
       uploadedFile.tempFilePath,
@@ -817,10 +864,10 @@ exports.addPatientDocument = async (req, res) => {
       return res.status(400).json({ message: "Error adding document" });
     }
 
-    // const cacheKeysToInvalidate = cache
-    //   .keys()
-    //   .filter((key) => key.includes("allPatients") || key.includes("page:"));
-    // cacheKeysToInvalidate.forEach((key) => cache.del(key));
+    const cacheKeysToInvalidate = cache
+      .keys()
+      .filter((key) => key.includes("allPatients") || key.includes("page:"));
+    cacheKeysToInvalidate.forEach((key) => cache.del(key));
 
     res.status(200).json({
       message: `document added successfully`,
@@ -898,7 +945,10 @@ exports.updatePatientDocument = async (req, res) => {
         new: true,
       }
     );
-
+    const cacheKeysToInvalidate = cache
+      .keys()
+      .filter((key) => key.includes("allPatients") || key.includes("page:"));
+    cacheKeysToInvalidate.forEach((key) => cache.del(key));
     res.status(200).json({
       message: "Document updated successfully",
       data: updatedPatient,
@@ -951,6 +1001,11 @@ exports.deletePatientDocument = async (req, res) => {
     if (!updatedPatient) {
       return res.status(400).json({ message: "Error deleting document" });
     }
+
+    const cacheKeysToInvalidate = cache
+      .keys()
+      .filter((key) => key.includes("allPatients") || key.includes("page:"));
+    cacheKeysToInvalidate.forEach((key) => cache.del(key));
 
     res.status(200).json({
       message: "Document deleted successfully",
@@ -1269,5 +1324,63 @@ exports.updateTCCard = async (req, res) => {
     res
       .status(500)
       .json({ message: "Error updating TC Card", error: error.message });
+  }
+};
+
+exports.deleteTCCard = async (req, res) => {
+  try {
+    const { patientId, tcCardId } = req.params;
+
+    if (!patientId || !tcCardId) {
+      return res
+        .status(400)
+        .json({ message: "Patient ID and TC Card ID are required" });
+    }
+
+    // Find the patient by patientId
+    const patient = await Patients.findOne({ patientId });
+
+    if (!patient) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    // Find the TC Card to be deleted
+    const tcCard = patient.patientTcCard.find(
+      (card) => card.tcCardId === tcCardId
+    );
+
+    if (!tcCard) {
+      return res.status(404).json({ message: "TC Card not found" });
+    }
+
+    if (tcCard.tccardPdf && tcCard.tccardPdf.public_id) {
+      const publicId = tcCard.tccardPdf.public_id;
+
+      const deleteResult = await deleteFile(publicId);
+      if (deleteResult.result !== "ok") {
+        return res.status(500).json({
+          message: "Error deleting the file from Cloudinary",
+          error: deleteResult,
+        });
+      }
+    }
+
+    // Remove the TC Card from the patient's record
+    patient.patientTcCard = patient.patientTcCard.filter(
+      (card) => card.tcCardId !== tcCardId
+    );
+
+    // Save the updated patient document
+    const updatedPatient = await patient.save();
+
+    res.status(200).json({
+      message: "TC Card deleted successfully",
+      data: updatedPatient.patientTcCard,
+    });
+  } catch (error) {
+    console.error("Error deleting TC Card:", error);
+    res
+      .status(500)
+      .json({ message: "Error deleting TC Card", error: error.message });
   }
 };

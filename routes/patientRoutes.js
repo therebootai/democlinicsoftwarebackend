@@ -40,6 +40,10 @@ router.put(
   "/update/tccard/:patientId/:tcCardId",
   patientController.updateTCCard
 );
+router.delete(
+  "/delete/tccard/:patientId/:tcCardId",
+  patientController.deleteTCCard
+);
 
 router.delete(
   "/delete/prescriptions/:patientId/:prescriptionId/:subdocument/:customId",
