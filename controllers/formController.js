@@ -24,8 +24,6 @@ exports.addForm = async (req, res) => {
     fs.unlink(uploadedFile.tempFilePath, (err) => {
       if (err) {
         console.error("Failed to delete temporary file:", err);
-      } else {
-        console.log("Temporary file deleted successfully");
       }
     });
     return res.status(200).json(newForm);
