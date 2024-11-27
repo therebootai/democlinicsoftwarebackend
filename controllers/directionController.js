@@ -29,8 +29,6 @@ exports.addDirection = async (req, res) => {
     fs.unlink(uploadedFile.tempFilePath, (err) => {
       if (err) {
         console.error("Failed to delete temporary file:", err);
-      } else {
-        console.log("Temporary file deleted successfully");
       }
     });
     return res.status(200).json(newDirection);
@@ -55,21 +53,27 @@ exports.getDirection = async (req, res) => {
 
 exports.deleteDirection = async (req, res) => {
   try {
-    const requestedDirection = await Direction.findById(req.params.id);
+    // Find the direction by directionId
+    const requestedDirection = await Direction.findOne({
+      directionId: req.params.id,
+    });
 
-    const deleteResult = await deleteFile(requestedDirection.publicId);
-
-    if (deleteResult.result != "ok") {
+    if (!requestedDirection) {
       return res
         .status(400)
-        .json({ message: "file deletation failed", success: false });
+        .json({ message: "Direction not found", success: false });
     }
-    await Direction.findByIdAndDelete(req.params.id);
+
+    // Delete the direction from the database using directionId
+    await Direction.findOneAndDelete({ directionId: req.params.id });
+
     return res
       .status(200)
       .json({ message: "Direction deleted successfully", success: true });
   } catch (error) {
-    console.error(error.message);
-    return res.status(500).send("Internal Server Error");
+    console.error("Error deleting direction:", error.message);
+    return res
+      .status(500)
+      .json({ message: "Internal Server Error", success: false });
   }
 };

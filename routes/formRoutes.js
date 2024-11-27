@@ -9,6 +9,6 @@ const router = express.Router();
 router.post("/add", addForm);
 router.get("/get", getForms);
 
-router.delete("/:id/delete", deleteForm);
+router.delete("/delete/:id", deleteForm);
 
 module.exports = router;

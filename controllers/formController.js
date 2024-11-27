@@ -51,20 +51,25 @@ exports.getForms = async (req, res) => {
 
 exports.deleteForm = async (req, res) => {
   try {
-    const requestedForm = await Form.findById(req.params.id);
+    const requestedForms = await Form.findOne({
+      formId: req.params.id,
+    });
 
-    const deleteResult = await deleteFile(requestedForm.publicId);
-    if (deleteResult.result != "ok") {
+    if (!requestedForms) {
       return res
         .status(400)
-        .json({ message: "file deletation failed", success: false });
+        .json({ message: "Direction not found", success: false });
     }
-    await Form.findByIdAndDelete(req.params.id);
+
+    await Form.findOneAndDelete({ formId: req.params.id });
+
     return res
       .status(200)
-      .json({ message: "file deleted successfully", success: true });
+      .json({ message: "Form deleted successfully", success: true });
   } catch (error) {
-    console.error(error.message);
-    return res.status(500).send("Internal Server Error");
+    console.error("Error deleting Form:", error.message);
+    return res
+      .status(500)
+      .json({ message: "Internal Server Error", success: false });
   }
 };
