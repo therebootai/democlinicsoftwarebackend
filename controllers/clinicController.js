@@ -27,8 +27,23 @@ exports.addNewClinic = async (req, res) => {
 };
 
 exports.getAllClinics = async (req, res) => {
+  const { clinicId } = req.query; // Extract clinicId from the query parameters (still named `clinicId`)
+
   try {
-    const clinics = await Clinic.find({});
+    let clinics;
+
+    if (clinicId) {
+      // Use _id for querying clinics
+      clinics = await Clinic.find({ _id: clinicId });
+
+      if (clinics.length === 0) {
+        return res.status(404).json({ message: "Clinic not found" });
+      }
+    } else {
+      // Return all clinics if no clinicId is provided
+      clinics = await Clinic.find({});
+    }
+
     res.status(200).json(clinics);
   } catch (error) {
     res.status(500).json({ message: error.message });
