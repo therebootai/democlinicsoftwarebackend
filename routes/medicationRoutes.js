@@ -10,9 +10,9 @@ router.get(
   "/getdropdown/random",
   medicationController.getRandomMedicationSuggestions
 );
-router.delete(
-  "/delete/:medicineBrandName",
-  medicationController.deleteMedication
-);
+
+router.put("/update/:medicineId", medicationController.updateMedication);
+
+router.delete("/delete/:medicineId", medicationController.deleteMedication);
 
 module.exports = router;
