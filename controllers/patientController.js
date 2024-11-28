@@ -1256,38 +1256,59 @@ exports.updateTCCard = async (req, res) => {
       return res.status(404).json({ message: "TC Card not found" });
     }
 
-    if (tccardPdf.mimetype !== "application/pdf") {
-      return res
-        .status(400)
-        .json({ message: "Uploaded file is not a valid PDF" });
-    }
-
-    let uploadedFile = null;
-
-    if (tccardPdf && tccardPdf.tempFilePath) {
-      uploadedFile = await uploadFile(
-        tccardPdf.tempFilePath,
-        tccardPdf.mimetype
-      );
-      if (uploadedFile.error) {
-        return res.status(500).json({
-          message: "Error uploading new PDF file",
-          error: uploadedFile.error,
-        });
+    // If a new PDF file is uploaded, delete the old one first
+    if (tccardPdf) {
+      // Check if an existing PDF is present and delete it
+      if (tcCard.tccardPdf?.public_id) {
+        try {
+          await deleteFile(tcCard.tccardPdf.public_id);
+        } catch (error) {
+          console.error("Error deleting old PDF file:", error);
+          return res.status(500).json({
+            message: "Error deleting the old PDF file before upload.",
+            error: error.message,
+          });
+        }
       }
 
-      fs.unlink(tccardPdf.tempFilePath, (err) => {
-        if (err) {
-          console.error("Error deleting the temp file:", err);
-        }
-      });
+      // Upload the new PDF
+      if (tccardPdf.mimetype !== "application/pdf") {
+        return res
+          .status(400)
+          .json({ message: "Uploaded file is not a valid PDF" });
+      }
 
-      tcCard.tccardPdf = {
-        secure_url: uploadedFile.secure_url,
-        public_id: uploadedFile.public_id,
-      };
+      let uploadedFile = null;
+
+      if (tccardPdf.tempFilePath) {
+        uploadedFile = await uploadFile(
+          tccardPdf.tempFilePath,
+          tccardPdf.mimetype
+        );
+
+        if (uploadedFile.error) {
+          return res.status(500).json({
+            message: "Error uploading new PDF file",
+            error: uploadedFile.error,
+          });
+        }
+
+        // Delete the temporary file from the local file system after upload
+        fs.unlink(tccardPdf.tempFilePath, (err) => {
+          if (err) {
+            console.error("Error deleting the temp file:", err);
+          }
+        });
+
+        // Update the TC card with the new PDF URL and public_id
+        tcCard.tccardPdf = {
+          secure_url: uploadedFile.secure_url,
+          public_id: uploadedFile.public_id,
+        };
+      }
     }
 
+    // Update the TC Card details (other fields like typeOfWork, payment, etc.)
     if (tcCardDetails && Array.isArray(tcCardDetails)) {
       tcCard.patientTcCardDetails = tcCardDetails.map((detail) => ({
         typeOfWork: detail.typeOfWork,
@@ -1301,6 +1322,7 @@ exports.updateTCCard = async (req, res) => {
       }));
     }
 
+    // Save the updated patient document with the modified TC Card
     const updatedPatient = await Patients.findOneAndUpdate(
       { patientId },
       { $set: { patientTcCard: patient.patientTcCard } },
