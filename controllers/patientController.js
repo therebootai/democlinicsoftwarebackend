@@ -7,6 +7,45 @@ const generateNestedCustomId = require("../middlewares/ganerateNestedCustomId");
 const cache = new NodeCache({ stdTTL: 300 });
 const User = require("../models/User");
 const fs = require("fs");
+const path = require("path");
+const fastcsv = require("fast-csv");
+
+const mongoose = require("mongoose");
+
+const counterSchema = new mongoose.Schema({
+  _id: { type: String, required: true },
+  sequenceValue: { type: Number, required: true },
+});
+
+const Counter = mongoose.model("Counter", counterSchema);
+
+const getNextSequenceValue = async (sequenceName) => {
+  const sequenceDocument = await Counter.findByIdAndUpdate(
+    sequenceName,
+    { $inc: { sequenceValue: 1 } },
+    { new: true, upsert: true }
+  );
+  return sequenceDocument.sequenceValue;
+};
+
+const generatePatientId = async () => {
+  let isUnique = false;
+  let patientId = "";
+
+  while (!isUnique) {
+    // Get the next unique sequence value for the patient ID
+    const sequenceValue = await getNextSequenceValue("patientId");
+    patientId = `patientId${String(sequenceValue).padStart(4, "0")}`;
+
+    // Check if the generated patientId already exists in the database
+    const existingPatient = await Patients.findOne({ patientId });
+    if (!existingPatient) {
+      isUnique = true;
+    }
+  }
+
+  return patientId;
+};
 
 const generateNestedDocumentId = async (Model, patientId) => {
   try {
@@ -419,6 +458,7 @@ exports.patientPrescriptionUpdate = async (req, res) => {
   try {
     const { patientId, prescriptionId } = req.params;
     const updatedData = req.body;
+    const prescriptionPdf = req.files ? req.files.prescriptionPdf : null;
 
     const patient = await Patients.findOne({ patientId }).populate(
       "prescriptions"
@@ -520,10 +560,62 @@ exports.patientPrescriptionUpdate = async (req, res) => {
       prescription.followupdate = updatedData.followupdate;
     }
 
-    // Save the updated prescription
+    if (prescriptionPdf) {
+      if (prescription.prescriptionPdf?.public_id) {
+        try {
+          await deleteFile(prescription.prescriptionPdf.public_id);
+        } catch (error) {
+          console.error("Error deleting old PDF file:", error);
+          return res.status(500).json({
+            message: "Error deleting the old PDF file before upload.",
+            error: error.message,
+          });
+        }
+      }
+
+      if (prescriptionPdf.mimetype !== "application/pdf") {
+        return res
+          .status(400)
+          .json({ message: "Uploaded file is not a valid PDF" });
+      }
+
+      let uploadedFile = null;
+      if (prescriptionPdf.tempFilePath) {
+        uploadedFile = await uploadFile(
+          prescriptionPdf.tempFilePath,
+          prescriptionPdf.mimetype
+        );
+
+        if (uploadedFile.error) {
+          return res.status(500).json({
+            message: "Error uploading new PDF file",
+            error: uploadedFile.error,
+          });
+        }
+
+        fs.unlink(prescriptionPdf.tempFilePath, (err) => {
+          if (err) {
+            console.error("Error deleting temp file:", err);
+          }
+        });
+
+        prescription.prescriptionPdf = {
+          secure_url: uploadedFile.secure_url,
+          public_id: uploadedFile.public_id,
+        };
+      }
+    } else if (!prescription.prescriptionPdf?.secure_url) {
+      prescription.prescriptionPdf = {
+        secure_url: "",
+        public_id: "",
+      };
+    }
+
     const savedPrescription = await Prescriptions.findByIdAndUpdate(
       prescriptionId,
-      { $set: updatedData }, // update fields
+      {
+        $set: { ...updatedData, prescriptionPdf: prescription.prescriptionPdf },
+      },
       { new: true }
     );
 
@@ -612,6 +704,7 @@ exports.updatePatientWithPrescription = async (req, res) => {
             }))
           : [],
         followupdate: prescriptionData.followupdate || undefined,
+        prescriptionPdf: prescriptionData.prescriptionPdf || undefined,
       };
 
       try {
@@ -1405,4 +1498,385 @@ exports.deleteTCCard = async (req, res) => {
       .status(500)
       .json({ message: "Error deleting TC Card", error: error.message });
   }
+};
+
+exports.createPatientsFromCSV = async (req, res) => {
+  if (!req.files || !req.files.file) {
+    return res.status(400).json({
+      message: "No file uploaded. Please upload a CSV file.",
+    });
+  }
+
+  const file = req.files.file;
+  const filePath = path.join(__dirname, "../temp", file.name);
+
+  try {
+    await file.mv(filePath);
+
+    const patientPromises = [];
+
+    fs.createReadStream(filePath)
+      .pipe(fastcsv.parse({ headers: true, skipEmptyLines: true }))
+      .on("data", async (row) => {
+        try {
+          const patientId = await generatePatientId();
+
+          const {
+            patientName,
+            mobileNumber,
+            gender,
+            age,
+            location,
+            chooseDoctor,
+            address,
+            city,
+            pinCode,
+            priority,
+            clinicId,
+          } = row;
+
+          const prescriptions = [];
+          const prescriptionIds = [];
+
+          if (prescriptions.length > 0) {
+            for (let prescription of prescriptions) {
+              const newPrescription = new Prescriptions(prescription);
+              const savedPrescription = await newPrescription.save();
+              prescriptionIds.push(savedPrescription._id);
+            }
+          }
+
+          const newPatient = new Patients({
+            patientId,
+            patientName,
+            mobileNumber,
+            gender,
+            age,
+            location,
+            chooseDoctor,
+            address,
+            city,
+            pinCode,
+            priority,
+            clinicId,
+            prescriptions: prescriptionIds,
+            medicalHistory: [],
+          });
+
+          patientPromises.push(newPatient.save());
+        } catch (error) {
+          console.error(`Error processing patient record: ${error.message}`);
+        }
+      })
+      .on("end", async () => {
+        try {
+          const savedPatients = await Promise.all(patientPromises);
+
+          const cacheKeysToInvalidate = cache
+            .keys()
+            .filter(
+              (key) => key.includes("allPatients") || key.includes("page:")
+            );
+          cacheKeysToInvalidate.forEach((key) => cache.del(key));
+
+          fs.unlinkSync(filePath);
+
+          res.status(201).json({
+            message: "Patients Imported Successfully",
+            data: savedPatients.length,
+          });
+        } catch (error) {
+          console.error("Error saving patients:", error);
+          res.status(500).json({
+            message: "Error saving patients from CSV",
+            error: error.message,
+          });
+        }
+      })
+      .on("error", (error) => {
+        console.error("Error reading CSV file:", error);
+        res.status(500).json({
+          message: "Error reading CSV file",
+          error: error.message,
+        });
+      });
+  } catch (error) {
+    console.error("Error uploading file:", error);
+    res.status(500).json({
+      message: "Error importing patients from CSV",
+      error: error.message,
+    });
+  }
+};
+
+exports.getPatientsForExport = async (req, res) => {
+  try {
+    const match = {};
+
+    // Apply filters if provided in the query
+    if (req.query.search) {
+      const searchRegex = new RegExp(req.query.search, "i");
+      match.$or = [
+        { patientId: searchRegex },
+        { patientName: searchRegex },
+        { mobileNumber: searchRegex },
+      ];
+    }
+
+    // Date filter
+    if (req.query.startdate || req.query.enddate) {
+      const startDate = req.query.startdate
+        ? new Date(req.query.startdate)
+        : null;
+      let endDate = req.query.enddate ? new Date(req.query.enddate) : null;
+
+      if (startDate && endDate) {
+        endDate.setHours(23, 59, 59, 999);
+        match.appointmentdate = { $gte: startDate, $lte: endDate };
+      } else if (startDate) {
+        const endOfDay = new Date(startDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        match.appointmentdate = { $gte: startDate, $lte: endOfDay };
+      }
+    }
+
+    // Filter by doctorId
+    if (req.query.doctorId) {
+      match.chooseDoctor = req.query.doctorId;
+    }
+
+    if (req.query.clinicId) {
+      match.clinicId = req.query.clinicId;
+    }
+
+    const patients = await Patients.find(match)
+      .sort({ appointmentdate: -1 })
+      .populate("clinicId", "clinic_name clinic_address")
+      .populate("prescriptions");
+
+    // Fetch doctor details for each patient if chooseDoctor exists
+    const patientsWithDoctorDetails = await Promise.all(
+      patients.map(async (patient) => {
+        const patientObj = patient.toObject();
+
+        if (patientObj.chooseDoctor) {
+          const doctor = await User.findOne({
+            userId: patientObj.chooseDoctor,
+          }).select("name phone email role designation doctorDegree");
+
+          if (doctor) {
+            patientObj.chooseDoctorDetails = {
+              name: doctor.name,
+              phone: doctor.phone,
+              email: doctor.email,
+              role: doctor.role,
+              designation: doctor.designation,
+              doctorDegree: doctor.doctorDegree,
+            };
+          }
+        }
+        return patientObj;
+      })
+    );
+
+    // Prepare CSV or Excel format
+    const csv = convertPatientsToCSV(patientsWithDoctorDetails); // Convert data to CSV format
+    res.header("Content-Type", "text/csv");
+    res.attachment("patients_data.csv");
+    return res.send(csv);
+  } catch (error) {
+    console.error("Error exporting Patients:", error);
+    res.status(500).json({
+      message: "Error exporting Patients",
+      error: error.message,
+    });
+  }
+};
+
+// Helper function to convert patient data into CSV format
+const convertPatientsToCSV = (patients) => {
+  const headers = [
+    "Patient ID",
+    "Patient Name",
+    "Mobile Number",
+    "Gender",
+    "Age",
+    "Location",
+    "Doctor Name",
+    "Doctor Phone",
+    "Doctor Email",
+    "Appointment Date",
+    "Clinic Name",
+    "Address",
+    "City",
+    "Pin Code",
+    "Priority",
+    "Prescription Details",
+    "TCCard Details",
+    "Payment Details",
+    "Document Details",
+    "Medical History",
+  ];
+
+  const rows = patients.map((patient) => {
+    const {
+      patientId,
+      patientName,
+      mobileNumber,
+      gender,
+      age,
+      location,
+      chooseDoctorDetails,
+      appointmentdate,
+      clinicId,
+      address,
+      city,
+      pinCode,
+      priority,
+      prescriptions,
+      patientTcCard,
+      paymentDetails,
+      patientDocuments,
+      medicalHistory,
+    } = patient;
+
+    // Format the appointment date
+    const formattedAppointmentDate = appointmentdate
+      ? new Date(appointmentdate).toLocaleString("en-GB", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true, // Use 12-hour format with AM/PM
+        })
+      : "";
+
+    // Extract prescription details (if any)
+    const prescriptionDetails = prescriptions
+      ? prescriptions
+          .map((prescription) => {
+            const chiefComplain = prescription.chiefComplain
+              ? prescription.chiefComplain
+                  .map((complain) => complain.chiefComplainName)
+                  .join(", ")
+              : "";
+            const onExamination = prescription.onExamination
+              ? prescription.onExamination
+                  .map((examine) => {
+                    return `${
+                      examine.onExaminationName
+                    } (Area: ${examine.onExaminationArea.join(", ")})`;
+                  })
+                  .join(", ")
+              : "";
+            const investigations = prescription.investigation
+              ? prescription.investigation
+                  .map((investigation) => investigation.investigationName)
+                  .join(", ")
+              : "";
+            const radiography = prescription.radiography
+              ? prescription.radiography
+                  .map((radiograph) => radiograph.radiographyName)
+                  .join(", ")
+              : "";
+            const advices = prescription.advices
+              ? prescription.advices
+                  .map((advice) => advice.advicesName)
+                  .join(", ")
+              : "";
+
+            // Format medications as a detailed list
+            const medications = prescription.medications
+              ? prescription.medications
+                  .map((medication) => {
+                    return `Brand: ${medication.medicineBrandName}, Composition: ${medication.medicineComposition}, Strength: ${medication.medicineStrength}, Dose: ${medication.medicineDose}, Frequency: ${medication.medicineFrequency}, Timing: ${medication.medicineTiming}, Duration: ${medication.medicineDuration}, Start From: ${medication.medicineStartfrom}, Instructions: ${medication.medicineInstructions}, Quantity: ${medication.medicineQuantity}`;
+                  })
+                  .join(" | ")
+              : "No Medications";
+
+            const referDoctor = prescription.referDoctor
+              ? prescription.referDoctor
+                  .map((refer) => refer.referDoctor)
+                  .join(", ")
+              : "";
+            const followupDate = prescription.followupdate
+              ? prescription.followupdate.toISOString()
+              : "";
+
+            // Combine all prescription details into one string
+            return `Chief Complain: ${chiefComplain}; On Examination: ${onExamination}; Investigations: ${investigations}; Radiography: ${radiography}; Advices: ${advices}; Medications: ${medications}; Refer Doctor: ${referDoctor}; Follow Up Date: ${followupDate}`;
+          })
+          .join(" | ")
+      : "No prescriptions";
+
+    // Extract TCCard Details (if any)
+    const tcCardDetails = patientTcCard
+      ? patientTcCard
+          .map((tcCard) => {
+            return tcCard.patientTcCardDetails
+              .map((tc) => {
+                return `Type: ${tc.typeOfWork}, TC: ${tc.tc}, Step Done: ${tc.stepDone}, Next Appointment: ${tc.nextAppointment}, Payment: ${tc.payment}`;
+              })
+              .join(" | ");
+          })
+          .join(" | ")
+      : "No TCCard Details";
+
+    // Extract Payment Details (if any)
+    const paymentDetail = paymentDetails
+      ? paymentDetails
+          .map((payment) => {
+            return `Item: ${payment.iteamName}, Charges: ${payment.iteamCharges}, Description: ${payment.paymentDescription}`;
+          })
+          .join(" | ")
+      : "No Payment Details";
+
+    // Extract Document Details (if any)
+    const documentDetails = patientDocuments
+      ? patientDocuments
+          .map((document) => {
+            return `Title: ${document.documentTitle}, File: ${document.documentFile}`;
+          })
+          .join(" | ")
+      : "No Documents";
+
+    // Extract Medical History Details (if any)
+    const medicalHistoryDetails = medicalHistory
+      ? medicalHistory
+          .map((history) => {
+            return `${history.medicalHistoryName} (Duration: ${
+              history.duration
+            }, Medicines: ${history.medicalHistoryMedicine.join(", ")})`;
+          })
+          .join(" | ")
+      : "No Medical History";
+
+    return [
+      patientId,
+      patientName,
+      mobileNumber,
+      gender,
+      age,
+      location,
+      chooseDoctorDetails ? chooseDoctorDetails.name : "",
+      chooseDoctorDetails ? chooseDoctorDetails.phone : "",
+      chooseDoctorDetails ? chooseDoctorDetails.email : "",
+      formattedAppointmentDate, // Use formatted date
+      clinicId ? clinicId.clinic_name : "",
+      address,
+      city,
+      pinCode,
+      priority,
+      prescriptionDetails,
+      tcCardDetails,
+      paymentDetail,
+      documentDetails,
+      medicalHistoryDetails,
+    ];
+  });
+
+  // Combine headers and rows into CSV string
+  const csvRows = [headers.join(","), ...rows.map((row) => row.join(","))];
+  return csvRows.join("\n");
 };

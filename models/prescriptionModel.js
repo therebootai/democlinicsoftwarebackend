@@ -1,8 +1,6 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
-const Patient = require("./patientModel");
 
-// Define individual schemas without IDs
 const chiefComplainSchema = new Schema({
   chiefComplainName: { type: String },
 });
@@ -42,7 +40,6 @@ const referDoctorSchema = new Schema({
   referDoctor: { type: String },
 });
 
-// Main prescription schema
 const prescriptionSchema = new Schema(
   {
     prescriptionId: { type: String },
@@ -54,17 +51,23 @@ const prescriptionSchema = new Schema(
     medications: [medicationsSchema],
     referDoctor: [referDoctorSchema],
     followupdate: { type: Date },
+    prescriptionPdf: {
+      secure_url: {
+        type: String,
+      },
+      public_id: {
+        type: String,
+      },
+    },
   },
   {
     timestamps: true,
   }
 );
 
-// Pre-save hook to generate only the prescriptionId
 prescriptionSchema.pre("save", async function (next) {
   const prescription = this;
 
-  // Generate prescriptionId if it doesn't exist
   if (!prescription.prescriptionId) {
     const PrescriptionModel = mongoose.model(
       "Prescriptions",
@@ -86,5 +89,4 @@ prescriptionSchema.pre("save", async function (next) {
   next();
 });
 
-// Export model
 module.exports = mongoose.model("Prescriptions", prescriptionSchema);
