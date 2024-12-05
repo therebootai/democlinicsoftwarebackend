@@ -1509,6 +1509,7 @@ exports.createPatientsFromCSV = async (req, res) => {
 
   const file = req.files.file;
   const filePath = path.join(__dirname, "../temp", file.name);
+  let duplicateCount = 0; // Initialize duplicate counter
 
   try {
     await file.mv(filePath);
@@ -1534,6 +1535,15 @@ exports.createPatientsFromCSV = async (req, res) => {
             priority,
             clinicId,
           } = row;
+
+          // Check if the patient with the same mobileNumber already exists
+          const existingPatient = await Patients.findOne({ mobileNumber });
+
+          if (existingPatient) {
+            duplicateCount++;
+
+            return;
+          }
 
           const prescriptions = [];
           const prescriptionIds = [];
@@ -1582,8 +1592,9 @@ exports.createPatientsFromCSV = async (req, res) => {
           fs.unlinkSync(filePath);
 
           res.status(201).json({
-            message: "Patients Imported Successfully",
+            message: `Patients Imported Successfully. ${duplicateCount} duplicates found and skipped.`,
             data: savedPatients.length,
+            duplicateCount, // Return the duplicate count
           });
         } catch (error) {
           console.error("Error saving patients:", error);
