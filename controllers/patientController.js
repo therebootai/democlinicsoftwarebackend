@@ -1286,6 +1286,7 @@ exports.addnewTCCard = async (req, res) => {
         nextStep: detail.nextStep,
         payment: detail.payment,
         due: detail.due,
+        paymentMethod: detail.paymentMethod,
         comment: detail.comment,
       })),
       tccardPdf: uploadedFile
@@ -1411,6 +1412,7 @@ exports.updateTCCard = async (req, res) => {
         nextStep: detail.nextStep,
         payment: detail.payment,
         due: detail.due,
+        paymentMethod: detail.paymentMethod,
         comment: detail.comment,
       }));
     }
