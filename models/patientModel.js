@@ -47,6 +47,7 @@ const patientTcCardDetailsSchema = new Schema({
   nextStep: { type: String },
   payment: { type: String },
   due: { type: String },
+  paymentMethod: { type: String },
   comment: { type: String },
 });
 
