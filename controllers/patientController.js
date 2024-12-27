@@ -1706,6 +1706,52 @@ exports.getPatientsForExport = async (req, res) => {
   }
 };
 
+exports.getDoctorsBasedOnClinic = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+
+    // Check if the clinicId is a valid ObjectId
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(clinicId);
+
+    const resultArray = await Patients.aggregate([
+      {
+        $match: {
+          clinicId: isValidObjectId
+            ? new mongoose.Types.ObjectId(clinicId) // Use `new` here
+            : clinicId, // Use plain string if not a valid ObjectId
+        },
+      },
+      {
+        $group: {
+          _id: "$clinicId",
+          doctors: { $addToSet: "$chooseDoctor" },
+        },
+      },
+      {
+        $project: {
+          clinicId: "$_id",
+          _id: 0,
+          doctors: 1,
+        },
+      },
+    ]);
+
+    // Convert the result to an object
+    const result = resultArray.reduce((acc, item) => {
+      acc["doctors"] = item.doctors;
+      return acc;
+    }, {});
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Error getting Doctors:", error);
+    res.status(500).json({
+      message: "Error getting Doctors",
+      error: error.message,
+    });
+  }
+};
+
 // Helper function to convert patient data into CSV format
 const convertPatientsToCSV = (patients) => {
   const headers = [
