@@ -1,3 +1,4 @@
+const { default: mongoose } = require("mongoose");
 const generateCustomId = require("../middlewares/generateCustomId");
 const Clinic = require("../models/Clinic");
 
@@ -51,7 +52,14 @@ exports.getAllClinics = async (req, res) => {
 exports.getClinicById = async (req, res) => {
   try {
     const { clinicId } = req.params;
-    const clinic = await Clinic.findOne({ clinicId });
+    const clinic = await Clinic.findOne({
+      $or: [
+        { clinicId },
+        {
+          _id: mongoose.Types.ObjectId.isValid(clinicId) ? clinicId : undefined,
+        },
+      ],
+    });
     if (!clinic) {
       return res.status(404).json({ message: "No Clinic not found" });
     }
