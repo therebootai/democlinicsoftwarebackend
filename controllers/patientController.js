@@ -228,9 +228,15 @@ exports.getPatients = async (req, res) => {
       return res.status(200).json(cachedPatients);
     }
 
+    const sortOrder =
+      req.query.appointmentdate &&
+      req.query.appointmentdate.toLowerCase() === "false"
+        ? 1
+        : -1;
+
     const totalDocuments = await Patients.countDocuments(match);
     const patients = await Patients.find(match)
-      .sort({ appointmentdate: -1 })
+      .sort({ appointmentdate: sortOrder })
       .skip(skip)
       .limit(limit)
       .populate("prescriptions");
