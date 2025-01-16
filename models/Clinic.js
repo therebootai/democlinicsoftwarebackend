@@ -14,6 +14,11 @@ const clinicScheama = new mongoose.Schema({
     type: String,
     required: true,
   },
+  stocks: {
+    type: [mongoose.Schema.Types.ObjectId],
+    ref: "Stocks",
+    default: [],
+  },
 });
 
 const Clinic = mongoose.model("Clinics", clinicScheama);

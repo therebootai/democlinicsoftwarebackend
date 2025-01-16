@@ -37,10 +37,14 @@ exports.getAllClinics = async (req, res) => {
       clinics = await Clinic.find({ _id: clinicId });
 
       if (clinics.length === 0) {
-        return res.status(404).json({ message: "Clinic not found" });
+        return res
+          .status(404)
+          .json({ message: "Clinic not found" })
+          .populate("stocks")
+          .exec();
       }
     } else {
-      clinics = await Clinic.find({});
+      clinics = await Clinic.find({}).populate("stocks").exec();
     }
 
     res.status(200).json(clinics);
@@ -59,7 +63,9 @@ exports.getClinicById = async (req, res) => {
           _id: mongoose.Types.ObjectId.isValid(clinicId) ? clinicId : undefined,
         },
       ],
-    });
+    })
+      .populate("stocks")
+      .exec();
     if (!clinic) {
       return res.status(404).json({ message: "No Clinic not found" });
     }
