@@ -64,4 +64,9 @@ router.delete(
   patientController.deletePatientDocument
 );
 
+router.get(
+  "/clinic/doctors/:clinicId",
+  patientController.getDoctorsBasedOnClinic
+);
+
 module.exports = router;
