@@ -486,6 +486,23 @@ exports.patientPrescriptionUpdate = async (req, res) => {
 
     // Update fields one by one, handling nested arrays
     if (updatedData.chiefComplain) {
+      prescription.chiefComplain = prescription.chiefComplain.map(
+        (existingItem) => {
+          const updatedItem = updatedData.chiefComplain.find(
+            (newItem) =>
+              newItem.chiefComplainName === existingItem.chiefComplainName
+          );
+          if (updatedItem && updatedItem.dentalChart) {
+            return {
+              ...existingItem,
+              dentalChart: updatedItem.dentalChart,
+            };
+          }
+          return existingItem;
+        }
+      );
+
+      // Add new items that don't already exist
       prescription.chiefComplain = [
         ...prescription.chiefComplain,
         ...updatedData.chiefComplain.filter(
@@ -499,6 +516,23 @@ exports.patientPrescriptionUpdate = async (req, res) => {
     }
 
     if (updatedData.onExamination) {
+      prescription.onExamination = prescription.onExamination.map(
+        (existingItem) => {
+          const updatedItem = updatedData.onExamination.find(
+            (newItem) =>
+              newItem.onExaminationName === existingItem.onExaminationName
+          );
+          if (updatedItem && updatedItem.dentalChart) {
+            return {
+              ...existingItem,
+              dentalChart: updatedItem.dentalChart,
+            };
+          }
+          return existingItem;
+        }
+      );
+
+      // Add new items that don't already exist
       prescription.onExamination = [
         ...prescription.onExamination,
         ...updatedData.onExamination.filter(
@@ -525,6 +559,24 @@ exports.patientPrescriptionUpdate = async (req, res) => {
     }
 
     if (updatedData.radiography) {
+      // Update dentalChart for matching radiography items
+      prescription.radiography = prescription.radiography.map(
+        (existingItem) => {
+          const updatedItem = updatedData.radiography.find(
+            (newItem) =>
+              newItem.radiographyName === existingItem.radiographyName
+          );
+          if (updatedItem && updatedItem.dentalChart) {
+            return {
+              ...existingItem,
+              dentalChart: updatedItem.dentalChart,
+            };
+          }
+          return existingItem;
+        }
+      );
+
+      // Add new radiography items that don't already exist
       prescription.radiography = [
         ...prescription.radiography,
         ...updatedData.radiography.filter(
@@ -538,6 +590,21 @@ exports.patientPrescriptionUpdate = async (req, res) => {
     }
 
     if (updatedData.advices) {
+      // Update dentalChart for matching advices items
+      prescription.advices = prescription.advices.map((existingItem) => {
+        const updatedItem = updatedData.advices.find(
+          (newItem) => newItem.advicesName === existingItem.advicesName
+        );
+        if (updatedItem && updatedItem.dentalChart) {
+          return {
+            ...existingItem,
+            dentalChart: updatedItem.dentalChart,
+          };
+        }
+        return existingItem;
+      });
+
+      // Add new advices items that don't already exist
       prescription.advices = [
         ...prescription.advices,
         ...updatedData.advices.filter(
@@ -665,6 +732,9 @@ exports.updatePatientWithPrescription = async (req, res) => {
         chiefComplain: prescriptionData.chiefComplain
           ? prescriptionData.chiefComplain.map((item) => ({
               chiefComplainName: item.chiefComplainName || "",
+              dentalChart: Array.isArray(item.dentalChart)
+                ? item.dentalChart
+                : [],
             }))
           : [],
         onExamination: prescriptionData.onExamination
@@ -673,6 +743,7 @@ exports.updatePatientWithPrescription = async (req, res) => {
               onExaminationArea: item.onExaminationArea || [],
               onExaminationAdditionalNotes:
                 item.onExaminationAdditionalNotes || "",
+              dentalChart: item.dentalChart || [],
             }))
           : [],
         investigation: prescriptionData.investigation
@@ -683,11 +754,13 @@ exports.updatePatientWithPrescription = async (req, res) => {
         radiography: prescriptionData.radiography
           ? prescriptionData.radiography.map((item) => ({
               radiographyName: item.radiographyName || "",
+              dentalChart: item.dentalChart || [],
             }))
           : [],
         advices: prescriptionData.advices
           ? prescriptionData.advices.map((item) => ({
               advicesName: item.advicesName || "",
+              dentalChart: item.dentalChart || [],
             }))
           : [],
         medications: prescriptionData.medications
@@ -1236,7 +1309,7 @@ exports.updatePaymentDetails = async (req, res) => {
 exports.addnewTCCard = async (req, res) => {
   try {
     const { patientId } = req.params;
-    const { tcCardDetails, tccardPdf } = req.body;
+    const { tcCardDetails, tccardPdf, tcTypeOfWork } = req.body;
 
     if (!patientId) {
       return res.status(400).json({ message: "Patient ID is required" });
@@ -1250,6 +1323,21 @@ exports.addnewTCCard = async (req, res) => {
       return res
         .status(400)
         .json({ message: "TC Card details are missing or invalid" });
+    }
+
+    if (
+      !tcTypeOfWork ||
+      !Array.isArray(tcTypeOfWork) ||
+      tcTypeOfWork.length === 0 ||
+      tcTypeOfWork.some(
+        (work) =>
+          !work.typeOfWork || !work.tcamount || !Array.isArray(work.dentalChart)
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          "TC Type of Work details are missing, invalid, or dentalChart is not an array",
+      });
     }
 
     let uploadedFile = null;
@@ -1274,6 +1362,11 @@ exports.addnewTCCard = async (req, res) => {
       });
     }
 
+    const totalPayment = tcTypeOfWork.reduce((sum, details) => {
+      const amount = parseFloat(details.tcamount) || 0;
+      return sum + amount;
+    }, 0);
+
     // Generate a unique TC Card ID
     const tcCardId = await generateNestedCustomId(
       Patients,
@@ -1284,6 +1377,11 @@ exports.addnewTCCard = async (req, res) => {
     // Structure the TC Card data
     const newTCCard = {
       tcCardId,
+      patientTcworkTypeDetails: tcTypeOfWork.map((details) => ({
+        typeOfWork: details.typeOfWork,
+        tcamount: details.tcamount,
+        dentalChart: details.dentalChart,
+      })),
       patientTcCardDetails: tcCardDetails.map((detail) => ({
         typeOfWork: detail.typeOfWork,
         tc: detail.tc,
@@ -1295,6 +1393,7 @@ exports.addnewTCCard = async (req, res) => {
         paymentMethod: detail.paymentMethod,
         comment: detail.comment,
       })),
+      totalPayment: totalPayment.toString(),
       tccardPdf: uploadedFile
         ? {
             secure_url: uploadedFile.secure_url,
@@ -1333,7 +1432,7 @@ exports.addnewTCCard = async (req, res) => {
 exports.updateTCCard = async (req, res) => {
   try {
     const { patientId, tcCardId } = req.params;
-    const { tcCardDetails } = req.body;
+    const { tcCardDetails, tcTypeOfWork } = req.body;
     const tccardPdf = req.files?.tccardPdf;
 
     if (!patientId || !tcCardId) {
@@ -1407,12 +1506,21 @@ exports.updateTCCard = async (req, res) => {
         };
       }
     }
+    if (tcTypeOfWork && Array.isArray(tcTypeOfWork)) {
+      tcCard.patientTcworkTypeDetails = tcTypeOfWork.map((details) => ({
+        typeOfWork: details.typeOfWork,
+        tcamount: details.tcamount,
+        dentalChart: details.dentalChart,
+      }));
+      tcCard.totalPayment = tcTypeOfWork.reduce((sum, details) => {
+        const amount = parseFloat(details.tcamount) || 0;
+        return sum + amount;
+      }, 0);
+    }
 
     // Update the TC Card details (other fields like typeOfWork, payment, etc.)
     if (tcCardDetails && Array.isArray(tcCardDetails)) {
       tcCard.patientTcCardDetails = tcCardDetails.map((detail) => ({
-        typeOfWork: detail.typeOfWork,
-        tc: detail.tc,
         stepDone: detail.stepDone,
         nextAppointment: detail.nextAppointment,
         nextStep: detail.nextStep,

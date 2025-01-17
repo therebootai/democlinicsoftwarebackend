@@ -39,22 +39,31 @@ const medicalHistorySchema = new Schema({
   medicalHistoryMedicine: [String],
 });
 
-const patientTcCardDetailsSchema = new Schema({
+const PatientTcworkTypeDetailsSchema = new Schema({
   typeOfWork: { type: String },
-  tc: { type: String },
-  stepDone: { type: String },
-  nextAppointment: { type: String },
-  nextStep: { type: String },
-  payment: { type: String },
-  due: { type: String },
-  paymentMethod: { type: String },
-  comment: { type: String },
+  tcamount: { type: String },
+  dentalChart: [String],
 });
+
+const patientTcCardDetailsSchema = new Schema(
+  {
+    stepDone: { type: String },
+    nextAppointment: { type: String },
+    nextStep: { type: String },
+    payment: { type: String },
+    due: { type: String },
+    paymentMethod: { type: String },
+    comment: { type: String },
+  },
+  { timestamps: true }
+);
 
 const patientTcCardSchema = new Schema(
   {
     tcCardId: { type: String },
+    patientTcworkTypeDetails: [PatientTcworkTypeDetailsSchema],
     patientTcCardDetails: [patientTcCardDetailsSchema],
+    totalPayment: { type: String },
     tccardPdf: {
       secure_url: {
         type: String,
@@ -116,6 +125,22 @@ const patientSchema = new Schema(
     timestamps: true,
   }
 );
+
+patientTcCardSchema.pre("save", function (next) {
+  if (
+    this.patientTcworkTypeDetails &&
+    Array.isArray(this.patientTcworkTypeDetails)
+  ) {
+    // Calculate the total of tcamount
+    this.totalPayment = this.patientTcworkTypeDetails.reduce((sum, detail) => {
+      const amount = parseFloat(detail.tcamount) || 0; // Ensure tcamount is a number
+      return sum + amount;
+    }, 0);
+  } else {
+    this.totalPayment = 0; // Default to 0 if no details
+  }
+  next();
+});
 
 patientSchema.index({ createdAt: -1, patientId: 1 });
 

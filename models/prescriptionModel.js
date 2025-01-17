@@ -3,12 +3,14 @@ const Schema = mongoose.Schema;
 
 const chiefComplainSchema = new Schema({
   chiefComplainName: { type: String },
+  dentalChart: [String],
 });
 
 const onExaminationSchema = new Schema({
   onExaminationName: { type: String },
   onExaminationArea: [String],
   onExaminationAdditionalNotes: { type: String },
+  dentalChart: [String],
 });
 
 const investigationSchema = new Schema({
@@ -17,10 +19,12 @@ const investigationSchema = new Schema({
 
 const radiographySchema = new Schema({
   radiographyName: { type: String },
+  dentalChart: [String],
 });
 
 const adviceSchema = new Schema({
   advicesName: { type: String },
+  dentalChart: [String],
 });
 
 const medicationsSchema = new Schema({
