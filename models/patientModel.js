@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
-const moment = require("moment-timezone");
 
+// Subschema definitions
 const patientDocumentSchema = new Schema({
   documentId: { type: String },
   documentTitle: { type: String },
@@ -19,6 +19,7 @@ const paymentDetailsSchema = new Schema(
     timestamps: true,
   }
 );
+
 const paymentSchema = new Schema(
   {
     paymentId: { type: String },
@@ -65,12 +66,8 @@ const patientTcCardSchema = new Schema(
     patientTcCardDetails: [patientTcCardDetailsSchema],
     totalPayment: { type: String },
     tccardPdf: {
-      secure_url: {
-        type: String,
-      },
-      public_id: {
-        type: String,
-      },
+      secure_url: { type: String },
+      public_id: { type: String },
     },
   },
   {
@@ -119,29 +116,73 @@ const patientSchema = new Schema(
       required: true,
     },
     patientTcCard: [patientTcCardSchema],
-    latestFollowupdate: { type: String },
+    latestFollowupdate: { type: Date, default: null },
   },
   {
     timestamps: true,
   }
 );
 
+// Middleware to calculate totalPayment in patientTcCard
 patientTcCardSchema.pre("save", function (next) {
   if (
     this.patientTcworkTypeDetails &&
     Array.isArray(this.patientTcworkTypeDetails)
   ) {
-    // Calculate the total of tcamount
     this.totalPayment = this.patientTcworkTypeDetails.reduce((sum, detail) => {
-      const amount = parseFloat(detail.tcamount) || 0; // Ensure tcamount is a number
+      const amount = parseFloat(detail.tcamount) || 0;
       return sum + amount;
     }, 0);
   } else {
-    this.totalPayment = 0; // Default to 0 if no details
+    this.totalPayment = 0;
   }
   next();
 });
 
+// Middleware to set latestFollowupdate in patientSchema
+
+patientSchema.pre("save", function (next) {
+  if (this.patientTcCard && Array.isArray(this.patientTcCard)) {
+    const allAppointments = this.patientTcCard
+      .flatMap((card) => card.patientTcCardDetails)
+      .map((detail) => detail.nextAppointment)
+      .filter((date) => date);
+
+    if (allAppointments.length > 0) {
+      const latestAppointment = allAppointments.reduce((latest, date) => {
+        return new Date(date) > new Date(latest) ? date : latest;
+      }, allAppointments[0]);
+
+      this.latestFollowupdate = new Date(latestAppointment);
+    } else {
+      this.latestFollowupdate = null; // Set as null if no dates are found
+    }
+  }
+  next();
+});
+
+patientSchema.pre("findOneAndUpdate", async function (next) {
+  const docToUpdate = await this.model.findOne(this.getQuery());
+  if (docToUpdate.patientTcCard && Array.isArray(docToUpdate.patientTcCard)) {
+    const allAppointments = docToUpdate.patientTcCard
+      .flatMap((card) => card.patientTcCardDetails)
+      .map((detail) => detail.nextAppointment)
+      .filter((date) => date);
+
+    if (allAppointments.length > 0) {
+      const latestAppointment = allAppointments.reduce((latest, date) => {
+        return new Date(date) > new Date(latest) ? date : latest;
+      }, allAppointments[0]);
+
+      this.set({ latestFollowupdate: new Date(latestAppointment) });
+    } else {
+      this.set({ latestFollowupdate: null });
+    }
+  }
+  next();
+});
+
+// Index for efficient querying
 patientSchema.index({ createdAt: -1, patientId: 1 });
 
 module.exports = mongoose.model("Patients", patientSchema);

@@ -169,6 +169,7 @@ exports.getPatients = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const match = {};
+    let latestFollowupdateFilter = {};
 
     if (req.query.search) {
       const searchRegex = new RegExp(req.query.search, "i");
@@ -183,23 +184,46 @@ exports.getPatients = async (req, res) => {
       const startDate = req.query.startdate
         ? new Date(req.query.startdate)
         : null;
-      let endDate = req.query.enddate ? new Date(req.query.enddate) : null;
+      const endDate = req.query.enddate ? new Date(req.query.enddate) : null;
 
       if (startDate && endDate) {
         endDate.setHours(23, 59, 59, 999);
-        match.appointmentdate = { $gte: startDate, $lte: endDate };
+
+        match.$or = [
+          { createdAt: { $gte: startDate, $lte: endDate } },
+          { latestFollowupdate: { $gte: startDate, $lte: endDate } },
+        ];
+        latestFollowupdateFilter = {
+          latestFollowupdate: { $gte: startDate, $lte: endDate },
+        };
       } else if (startDate) {
         const endOfDay = new Date(startDate);
         endOfDay.setHours(23, 59, 59, 999);
-        match.appointmentdate = { $gte: startDate, $lte: endOfDay };
+
+        match.$or = [
+          { createdAt: { $gte: startDate, $lte: endOfDay } },
+          { latestFollowupdate: { $gte: startDate, $lte: endOfDay } },
+        ];
+        latestFollowupdateFilter = {
+          latestFollowupdate: { $gte: startDate, $lte: endOfDay },
+        };
       }
     }
+
     if (req.query.doctorId) {
       match.chooseDoctor = req.query.doctorId;
     }
 
     if (req.query.clinicId) {
       match.clinicId = req.query.clinicId;
+    }
+
+    if (req.query.doctorId) {
+      latestFollowupdateFilter.chooseDoctor = req.query.doctorId;
+    }
+
+    if (req.query.clinicId) {
+      latestFollowupdateFilter.clinicId = req.query.clinicId;
     }
 
     let cacheKey = `page:${page}-limit:${limit}`;
@@ -227,6 +251,10 @@ exports.getPatients = async (req, res) => {
     if (cachedPatients) {
       return res.status(200).json(cachedPatients);
     }
+
+    const latestFollowupdateCount = await Patients.countDocuments(
+      latestFollowupdateFilter
+    );
 
     const sortOrder =
       req.query.appointmentdate &&
@@ -273,6 +301,7 @@ exports.getPatients = async (req, res) => {
       },
       0
     );
+
     const totalPages = Math.ceil(totalDocuments / limit);
 
     const result = {
@@ -280,6 +309,7 @@ exports.getPatients = async (req, res) => {
       totalPages,
       totalDocuments,
       totalPrescriptions,
+      latestFollowupdateCount,
       data: patientsWithDoctorDetails,
     };
 
