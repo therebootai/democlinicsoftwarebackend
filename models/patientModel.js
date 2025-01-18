@@ -53,6 +53,7 @@ const patientTcCardDetailsSchema = new Schema(
     nextStep: { type: String },
     payment: { type: String },
     due: { type: String },
+
     paymentMethod: { type: String },
     comment: { type: String },
   },
@@ -65,6 +66,7 @@ const patientTcCardSchema = new Schema(
     patientTcworkTypeDetails: [PatientTcworkTypeDetailsSchema],
     patientTcCardDetails: [patientTcCardDetailsSchema],
     totalPayment: { type: String },
+    totalDue: { type: String },
     tccardPdf: {
       secure_url: { type: String },
       public_id: { type: String },
@@ -123,18 +125,55 @@ const patientSchema = new Schema(
   }
 );
 
-// Middleware to calculate totalPayment in patientTcCard
+// Pre-save middleware to calculate totalPayment and totalDue
 patientTcCardSchema.pre("save", function (next) {
-  if (
-    this.patientTcworkTypeDetails &&
-    Array.isArray(this.patientTcworkTypeDetails)
-  ) {
-    this.totalPayment = this.patientTcworkTypeDetails.reduce((sum, detail) => {
-      const amount = parseFloat(detail.tcamount) || 0;
-      return sum + amount;
+  if (this.patientTcCardDetails && Array.isArray(this.patientTcCardDetails)) {
+    // Calculate total payment
+    this.totalPayment = this.patientTcCardDetails.reduce((sum, detail) => {
+      const payment = parseFloat(detail.payment) || 0;
+      return sum + payment;
+    }, 0);
+
+    // Calculate total due
+    this.totalDue = this.patientTcCardDetails.reduce((sum, detail) => {
+      const due = parseFloat(detail.due) || 0;
+      return sum + due;
     }, 0);
   } else {
     this.totalPayment = 0;
+    this.totalDue = 0;
+  }
+  next();
+});
+
+// Pre-findOneAndUpdate middleware to calculate totalPayment and totalDue
+patientTcCardSchema.pre("findOneAndUpdate", async function (next) {
+  const update = this.getUpdate();
+
+  if (
+    update.$set &&
+    update.$set.patientTcCardDetails &&
+    Array.isArray(update.$set.patientTcCardDetails)
+  ) {
+    // Calculate total payment
+    update.$set.totalPayment = update.$set.patientTcCardDetails.reduce(
+      (sum, detail) => {
+        const payment = parseFloat(detail.payment) || 0;
+        return sum + payment;
+      },
+      0
+    );
+
+    // Calculate total due
+    update.$set.totalDue = update.$set.patientTcCardDetails.reduce(
+      (sum, detail) => {
+        const due = parseFloat(detail.due) || 0;
+        return sum + due;
+      },
+      0
+    );
+
+    this.setUpdate(update);
   }
   next();
 });

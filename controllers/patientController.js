@@ -170,6 +170,7 @@ exports.getPatients = async (req, res) => {
 
     const match = {};
     let latestFollowupdateFilter = {};
+    let totalPaymentCollected = 0;
 
     if (req.query.search) {
       const searchRegex = new RegExp(req.query.search, "i");
@@ -293,6 +294,7 @@ exports.getPatients = async (req, res) => {
         return patientObj;
       })
     );
+
     const totalPrescriptions = patientsWithDoctorDetails.reduce(
       (total, patient) => {
         return (
@@ -310,6 +312,7 @@ exports.getPatients = async (req, res) => {
       totalDocuments,
       totalPrescriptions,
       latestFollowupdateCount,
+      totalPaymentCollected,
       data: patientsWithDoctorDetails,
     };
 
@@ -1392,11 +1395,6 @@ exports.addnewTCCard = async (req, res) => {
       });
     }
 
-    const totalPayment = tcTypeOfWork.reduce((sum, details) => {
-      const amount = parseFloat(details.tcamount) || 0;
-      return sum + amount;
-    }, 0);
-
     // Generate a unique TC Card ID
     const tcCardId = await generateNestedCustomId(
       Patients,
@@ -1423,7 +1421,7 @@ exports.addnewTCCard = async (req, res) => {
         paymentMethod: detail.paymentMethod,
         comment: detail.comment,
       })),
-      totalPayment: totalPayment.toString(),
+
       tccardPdf: uploadedFile
         ? {
             secure_url: uploadedFile.secure_url,
@@ -1434,6 +1432,16 @@ exports.addnewTCCard = async (req, res) => {
             public_id: tccardPdf?.public_id || null,
           },
     };
+
+    // Calculate total payment and due
+    newTCCard.totalPayment = newTCCard.patientTcCardDetails.reduce(
+      (sum, detail) => sum + parseFloat(detail.payment || 0),
+      0
+    );
+    newTCCard.totalDue = newTCCard.patientTcCardDetails.reduce(
+      (sum, detail) => sum + parseFloat(detail.due || 0),
+      0
+    );
 
     // Push the new TC Card into patientTcCard array
     const updatedPatient = await Patients.findOneAndUpdate(
@@ -1542,10 +1550,6 @@ exports.updateTCCard = async (req, res) => {
         tcamount: details.tcamount,
         dentalChart: details.dentalChart,
       }));
-      tcCard.totalPayment = tcTypeOfWork.reduce((sum, details) => {
-        const amount = parseFloat(details.tcamount) || 0;
-        return sum + amount;
-      }, 0);
     }
 
     // Update the TC Card details (other fields like typeOfWork, payment, etc.)
@@ -1560,6 +1564,15 @@ exports.updateTCCard = async (req, res) => {
         comment: detail.comment,
       }));
     }
+
+    tcCard.totalPayment = tcCard.patientTcCardDetails.reduce(
+      (sum, detail) => sum + parseFloat(detail.payment || 0),
+      0
+    );
+    tcCard.totalDue = tcCard.patientTcCardDetails.reduce(
+      (sum, detail) => sum + parseFloat(detail.due || 0),
+      0
+    );
 
     // Save the updated patient document with the modified TC Card
     const updatedPatient = await Patients.findOneAndUpdate(
