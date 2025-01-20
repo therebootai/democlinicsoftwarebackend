@@ -2,6 +2,7 @@
 const User = require("../models/User");
 const dotenv = require("dotenv");
 const bcrypt = require("bcryptjs");
+const { uploadFile, deleteFile } = require("../middlewares/cloudinary");
 
 const generateCustomId = require("../middlewares/generateCustomId");
 const { generateToken, verifyToken } = require("../middlewares/jsontoken");
@@ -74,6 +75,26 @@ exports.createUser = async (req, res) => {
 
     const userId = await generateCustomId(User, "userId", idPrefix);
 
+    let doctorSignature = {};
+    if (req.files?.doctorSignature) {
+      const tempFilePath = req.files.doctorSignature.tempFilePath;
+      const uploadResult = await uploadFile(
+        tempFilePath,
+        req.files.doctorSignature.mimetype
+      );
+
+      if (uploadResult.secure_url && uploadResult.public_id) {
+        doctorSignature = {
+          secure_url: uploadResult.secure_url,
+          public_id: uploadResult.public_id,
+        };
+      } else {
+        return res
+          .status(500)
+          .json({ message: "Failed to upload doctor's signature" });
+      }
+    }
+
     // Create new user
     const newUser = new User({
       userId,
@@ -84,6 +105,7 @@ exports.createUser = async (req, res) => {
       role,
       designation,
       doctorDegree,
+      doctorSignature,
       clinicId,
     });
     const savedUser = await newUser.save();
@@ -170,3 +192,83 @@ exports.getUserByToken = async (req, res) => {
   }
 };
 
+exports.updateUser = async (req, res) => {
+  const { userId } = req.params; // Extract userId from request parameters
+  const {
+    name,
+    email,
+    phone,
+    password,
+    role,
+    designation,
+    doctorDegree,
+    clinicId,
+  } = req.body;
+
+  try {
+    // Find the user by userId
+    const user = await User.findOne({ userId });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Update the fields if they are provided in the request body
+    if (name) user.name = name;
+    if (email) user.email = email;
+    if (phone) user.phone = phone;
+    if (password) {
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(password, salt);
+    }
+    if (role) user.role = role;
+    if (designation) user.designation = designation;
+    if (doctorDegree) user.doctorDegree = doctorDegree;
+    if (clinicId) {
+      if (Array.isArray(clinicId)) {
+        const clinics = await Clinic.find({ _id: { $in: clinicId } });
+        if (clinics.length !== clinicId.length) {
+          return res
+            .status(404)
+            .json({ message: "One or more clinics not found" });
+        }
+        user.clinicId = clinicId;
+      } else {
+        return res.status(400).json({ message: "clinicId must be an array" });
+      }
+    }
+
+    // Handle doctorSignature file upload
+    if (req.files?.doctorSignature) {
+      // Delete the existing signature from Cloudinary if it exists
+      if (user.doctorSignature?.public_id) {
+        await deleteFile(user.doctorSignature.public_id);
+      }
+
+      const tempFilePath = req.files.doctorSignature.tempFilePath;
+      const uploadResult = await uploadFile(
+        tempFilePath,
+        req.files.doctorSignature.mimetype
+      );
+
+      if (uploadResult.secure_url && uploadResult.public_id) {
+        user.doctorSignature = {
+          secure_url: uploadResult.secure_url,
+          public_id: uploadResult.public_id,
+        };
+      } else {
+        return res
+          .status(500)
+          .json({ message: "Failed to upload doctor's signature" });
+      }
+    }
+
+    // Save the updated user
+    const updatedUser = await user.save();
+
+    res
+      .status(200)
+      .json({ message: "User updated successfully", user: updatedUser });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

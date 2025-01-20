@@ -11,6 +11,8 @@ router.get("/", userController.getUserByToken);
 // Create a new user
 router.post("/users", userController.createUser);
 router.post("/login", userController.loginUser);
+router.put("/update/:userId", userController.updateUser);
+
 router.delete("/delete/:userId", userController.deleteUser);
 
 module.exports = router;

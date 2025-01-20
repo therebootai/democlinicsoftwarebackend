@@ -32,6 +32,14 @@ const userSchema = new mongoose.Schema({
   doctorDegree: {
     type: String,
   },
+  doctorSignature: {
+    secure_url: {
+      type: String,
+    },
+    public_id: {
+      type: String,
+    },
+  },
   clinicId: {
     type: [mongoose.Schema.Types.ObjectId],
     ref: "Clinics",
