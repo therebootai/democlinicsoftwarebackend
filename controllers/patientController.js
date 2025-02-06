@@ -33,11 +33,9 @@ const generatePatientId = async () => {
   let patientId = "";
 
   while (!isUnique) {
-    // Get the next unique sequence value for the patient ID
     const sequenceValue = await getNextSequenceValue("patientId");
     patientId = `patientId${String(sequenceValue).padStart(4, "0")}`;
 
-    // Check if the generated patientId already exists in the database
     const existingPatient = await Patients.findOne({ patientId });
     if (!existingPatient) {
       isUnique = true;
@@ -211,6 +209,72 @@ exports.getPatients = async (req, res) => {
       }
     }
 
+    let patientPaymentStartDate = null;
+    let patientPaymentEndDate = null;
+
+    if (req.query.patientPaymentStartDate || req.query.patientPaymentEndDate) {
+      patientPaymentStartDate = req.query.patientPaymentStartDate
+        ? new Date(req.query.patientPaymentStartDate)
+        : null;
+      patientPaymentEndDate = req.query.patientPaymentEndDate
+        ? new Date(req.query.patientPaymentEndDate)
+        : null;
+
+      // Ensure that dates are valid
+      if (patientPaymentStartDate && patientPaymentEndDate) {
+        patientPaymentEndDate.setHours(23, 59, 59, 999);
+
+        match.patientTcCard = {
+          $elemMatch: {
+            patientTcCardDetails: {
+              $elemMatch: {
+                createdAt: {
+                  $gte: patientPaymentStartDate,
+                  $lte: patientPaymentEndDate,
+                },
+              },
+            },
+          },
+        };
+        latestFollowupdateFilter.latestFollowupdate = {
+          $gte: patientPaymentStartDate,
+          $lte: patientPaymentEndDate,
+        };
+      } else if (patientPaymentStartDate) {
+        const endOfDay = new Date(patientPaymentStartDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        match.patientTcCard = {
+          $elemMatch: {
+            patientTcCardDetails: {
+              $elemMatch: {
+                createdAt: { $gte: patientPaymentStartDate, $lte: endOfDay },
+              },
+            },
+          },
+        };
+        latestFollowupdateFilter.latestFollowupdate = {
+          $gte: patientPaymentStartDate,
+          $lte: endOfDay,
+        };
+      } else if (patientPaymentEndDate) {
+        patientPaymentEndDate.setHours(23, 59, 59, 999);
+
+        match.patientTcCard = {
+          $elemMatch: {
+            patientTcCardDetails: {
+              $elemMatch: {
+                createdAt: { $lte: patientPaymentEndDate },
+              },
+            },
+          },
+        };
+        latestFollowupdateFilter.latestFollowupdate = {
+          $lte: patientPaymentEndDate,
+        };
+      }
+    }
+
     if (req.query.doctorId) {
       match.chooseDoctor = req.query.doctorId;
     }
@@ -234,6 +298,14 @@ exports.getPatients = async (req, res) => {
     }
     if (req.query.enddate) {
       cacheKey += `-enddate:${req.query.enddate}`;
+    }
+
+    if (req.query.patientPaymentStartDate) {
+      cacheKey += `-patientPaymentStartDate:${req.query.patientPaymentStartDate}`;
+    }
+
+    if (req.query.patientPaymentEndDate) {
+      cacheKey += `-patientPaymentEndDate:${req.query.patientPaymentEndDate}`;
     }
 
     if (req.query.search) {
@@ -264,11 +336,16 @@ exports.getPatients = async (req, res) => {
         : -1;
 
     const totalDocuments = await Patients.countDocuments(match);
-    const patients = await Patients.find(match)
-      .sort({ appointmentdate: sortOrder })
-      .skip(skip)
-      .limit(limit)
-      .populate("prescriptions");
+    let patients;
+    if (patientPaymentStartDate || patientPaymentEndDate) {
+      patients = await Patients.find(match).populate("prescriptions");
+    } else {
+      patients = await Patients.find(match)
+        .sort({ appointmentdate: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .populate("prescriptions");
+    }
 
     // Fetch doctor details for each patient if chooseDoctor exists
     const patientsWithDoctorDetails = await Promise.all(
@@ -304,7 +381,10 @@ exports.getPatients = async (req, res) => {
       0
     );
 
-    const totalPages = Math.ceil(totalDocuments / limit);
+    const totalPages =
+      patientPaymentStartDate || patientPaymentEndDate
+        ? 1
+        : Math.ceil(totalDocuments / limit);
 
     const result = {
       page,
@@ -1446,8 +1526,8 @@ exports.addnewTCCard = async (req, res) => {
     // Push the new TC Card into patientTcCard array
     const updatedPatient = await Patients.findOneAndUpdate(
       { patientId },
-      { $push: { patientTcCard: newTCCard } },
-      { new: true }
+      { $addToSet: { patientTcCard: newTCCard } },
+      { new: true, runValidators: true }
     );
 
     if (!updatedPatient) {

@@ -46,36 +46,30 @@ const PatientTcworkTypeDetailsSchema = new Schema({
   dentalChart: [String],
 });
 
-const patientTcCardDetailsSchema = new Schema(
-  {
-    stepDone: { type: String },
-    nextAppointment: { type: String },
-    nextStep: { type: String },
-    payment: { type: String },
-    due: { type: String },
+const patientTcCardDetailsSchema = new Schema({
+  stepDone: { type: String },
+  nextAppointment: { type: String },
+  nextStep: { type: String },
+  payment: { type: String },
+  due: { type: String },
 
-    paymentMethod: { type: String },
-    comment: { type: String },
-  },
-  { timestamps: true }
-);
+  paymentMethod: { type: String },
+  comment: { type: String },
+  createdAt: { type: Date, default: Date.now },
+});
 
-const patientTcCardSchema = new Schema(
-  {
-    tcCardId: { type: String },
-    patientTcworkTypeDetails: [PatientTcworkTypeDetailsSchema],
-    patientTcCardDetails: [patientTcCardDetailsSchema],
-    totalPayment: { type: String },
-    totalDue: { type: String },
-    tccardPdf: {
-      secure_url: { type: String },
-      public_id: { type: String },
-    },
+const patientTcCardSchema = new Schema({
+  tcCardId: { type: String },
+  patientTcworkTypeDetails: [PatientTcworkTypeDetailsSchema],
+  patientTcCardDetails: [patientTcCardDetailsSchema],
+  totalPayment: { type: String },
+  totalDue: { type: String },
+  tccardPdf: {
+    secure_url: { type: String },
+    public_id: { type: String },
   },
-  {
-    timestamps: true,
-  }
-);
+  createdAt: { type: Date, default: Date.now },
+});
 
 const patientSchema = new Schema(
   {
