@@ -148,6 +148,15 @@ exports.loginUser = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
+    // Role-based access validation
+    if (
+      (role === "staff" && user.designation !== "Staff") ||
+      (role === "doctor" && user.designation !== "Doctor") ||
+      (role === "super_admin" && user.role !== "super_admin")
+    ) {
+      return res.status(403).json({ message: "Unauthorized role selection" });
+    }
+
     const token = generateToken({ ...user });
 
     res.status(200).json({ user, token, name: user.name });
