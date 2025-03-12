@@ -7,6 +7,7 @@ const { uploadFile, deleteFile } = require("../middlewares/cloudinary");
 const generateCustomId = require("../middlewares/generateCustomId");
 const { generateToken, verifyToken } = require("../middlewares/jsontoken");
 const Clinic = require("../models/Clinic");
+const { default: axios } = require("axios");
 
 dotenv.config();
 // Get all users
@@ -279,5 +280,119 @@ exports.updateUser = async (req, res) => {
       .json({ message: "User updated successfully", user: updatedUser });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getUserByPhone = async (req, res) => {
+  try {
+    const { phone } = req.query;
+
+    if (!phone) {
+      return res.status(400).json({ message: "Phone number is required." });
+    }
+
+    const user = await User.findOne({ phone });
+
+    if (user) {
+      return res.json({ exists: true, message: "Phone number found." });
+    } else {
+      return res.json({ exists: false, message: "Phone number not found." });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const otpStorage = {};
+exports.sendOtp = async (req, res) => {
+  try {
+    let { phone, name } = req.body;
+
+    if (!phone) {
+      return res.status(400).json({ message: "Phone number is required" });
+    }
+
+    const formattedPhone = phone.startsWith("91") ? phone : "91" + phone;
+
+    if (!name) {
+      const user = await User.findOne({ phone: phone });
+      if (user) {
+        name = user.name;
+      } else {
+        name = "User";
+      }
+    }
+
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    otpStorage[formattedPhone] = {
+      otp: otpCode,
+      expiresAt: Date.now() + 5 * 60 * 1000,
+    };
+
+    const payload = {
+      "auth-key": "aa61059c453fd7b25e02a9dec860e9c4e23834a61d1d26de4b",
+      "app-key": "0f71de7c-53dc-4793-9469-96356a6a2e4a",
+      destination_number: formattedPhone,
+      template_id: "554597174279371",
+      device_id: "67599f6c1c50a6c971f41728",
+      language: "en",
+      variables: [name.toString(), otpCode.toString()],
+    };
+
+    const response = await axios.post(
+      "https://web.wabridge.com/api/createmessage",
+      payload
+    );
+
+    if (response.data.status === true) {
+      return res.json({ success: true, message: "OTP sent successfully" });
+    } else {
+      return res
+        .status(500)
+        .json({ success: false, message: "Failed to send OTP" });
+    }
+  } catch (error) {
+    console.error("Error sending OTP:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+exports.verifyWithOtp = async (req, res) => {
+  try {
+    const { phone, otp } = req.body;
+
+    if (!phone || !otp) {
+      return res
+        .status(400)
+        .json({ message: "Phone number and OTP are required" });
+    }
+
+    const formattedPhone = phone.startsWith("91") ? phone : "91" + phone;
+
+    if (
+      otpStorage[formattedPhone] &&
+      otpStorage[formattedPhone].otp === otp &&
+      otpStorage[formattedPhone].expiresAt > Date.now()
+    ) {
+      const user = await User.findOne({ phone: phone });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const token = generateToken({ ...user });
+      delete otpStorage[formattedPhone];
+
+      return res
+        .status(200)
+        .json({ success: true, user, token, name: user.name });
+    } else {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or expired OTP" });
+    }
+  } catch (error) {
+    console.error("Error verifying OTP for login:", error);
+    return res.status(500).json({ message: "Internal server error" });
   }
 };

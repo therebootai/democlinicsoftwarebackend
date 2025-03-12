@@ -8,6 +8,10 @@ router.get("/users", userController.getAllUsers);
 // Get user by token
 router.get("/", userController.getUserByToken);
 
+router.get("/checknumber", userController.getUserByPhone);
+router.post("/send-otp", userController.sendOtp);
+router.post("/verify-with-otp", userController.verifyWithOtp);
+
 // Create a new user
 router.post("/users", userController.createUser);
 router.post("/login", userController.loginUser);
